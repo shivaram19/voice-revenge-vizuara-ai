@@ -1,0 +1,78 @@
+# syntax=docker/dockerfile:1
+"""
+Construction Receptionist Dockerfile
+FastAPI server for Twilio telephony + construction contractor scheduling.
+No GPU. No self-hosted STT/TTS. Uses Azure OpenAI + Twilio cloud APIs.
+Ref: ADR-005; Microsoft (2024). Azure Container Apps documentation [^44].
+"""
+
+FROM python:3.11-slim-bookworm AS builder
+
+WORKDIR /build
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    libffi-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy dependency definitions
+COPY pyproject.toml ./
+COPY src/ ./src/
+
+# Install Python dependencies (no GPU variants)
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir \
+        fastapi>=0.111.0 \
+        uvicorn[standard]>=0.29.0 \
+        websockets>=12.0 \
+        openai>=1.30.0 \
+        prometheus-client>=0.20.0 \
+        structlog>=24.1.0 \
+        numpy>=1.26.0 \
+        pydantic>=2.7.0 \
+        pydantic-settings>=2.2.0 \
+        azure-identity>=1.16.0 \
+        azure-keyvault-secrets>=4.8.0 \
+        redis>=5.0.0 \
+        aiohttp>=3.9.0
+
+# ---------------------------------------------------------------------------
+# Production stage
+# ---------------------------------------------------------------------------
+FROM python:3.11-slim-bookworm AS production
+
+WORKDIR /app
+
+# Security: non-root user
+RUN groupadd -r voiceagent && useradd -r -g voiceagent voiceagent
+
+# Install runtime dependencies only
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy installed Python packages from builder
+COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
+
+# Copy application source
+COPY src/ ./src/
+COPY docker/entrypoint.agent.sh /app/entrypoint.sh
+
+# Create data directory for SQLite (writable by voiceagent)
+RUN mkdir -p /app/data && chown -R voiceagent:voiceagent /app
+
+USER voiceagent
+
+EXPOSE 8000
+
+ENV PYTHONPATH=/app
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV PORT=8000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/live')"
+
+ENTRYPOINT ["/app/entrypoint.sh"]
