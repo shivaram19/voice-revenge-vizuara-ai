@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: construction-receptionist
+  namespace: construction-receptionist
+  labels:
+    app: construction-receptionist
+spec:
+  type: ClusterIP
+  selector:
+    app: construction-receptionist
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8000
+      protocol: TCP

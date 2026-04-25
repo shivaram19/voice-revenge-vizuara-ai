@@ -1,0 +1,115 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: construction-receptionist
+  namespace: construction-receptionist
+  labels:
+    app: construction-receptionist
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: construction-receptionist
+  template:
+    metadata:
+      labels:
+        app: construction-receptionist
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+        - name: receptionist
+          image: buildpro.azurecr.io/construction-receptionist:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: construction-receptionist-config
+          env:
+            - name: AZURE_OPENAI_ENDPOINT
+              valueFrom:
+                secretKeyRef:
+                  name: construction-receptionist-secrets
+                  key: azure-openai-endpoint
+            - name: AZURE_OPENAI_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: construction-receptionist-secrets
+                  key: azure-openai-key
+            - name: REDIS_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: construction-receptionist-secrets
+                  key: redis-host
+            - name: REDIS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: construction-receptionist-secrets
+                  key: redis-key
+            - name: TWILIO_ACCOUNT_SID
+              valueFrom:
+                secretKeyRef:
+                  name: construction-receptionist-secrets
+                  key: twilio-account-sid
+            - name: TWILIO_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: construction-receptionist-secrets
+                  key: twilio-auth-token
+            - name: DEEPGRAM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: construction-receptionist-secrets
+                  key: deepgram-api-key
+            - name: APPLICATIONINSIGHTS_CONNECTION_STRING
+              valueFrom:
+                secretKeyRef:
+                  name: construction-receptionist-secrets
+                  key: appinsights-connection-string
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+            limits:
+              cpu: "2000m"
+              memory: "2Gi"
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            runAsNonRoot: true
+            runAsUser: 999
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: data
+              mountPath: /app/data
+      volumes:
+        - name: data
+          emptyDir: {}
+      securityContext:
+        fsGroup: 999

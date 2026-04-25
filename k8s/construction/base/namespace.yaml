@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: construction-receptionist
+  labels:
+    app.kubernetes.io/name: construction-receptionist
+    app.kubernetes.io/part-of: voice-agent-platform

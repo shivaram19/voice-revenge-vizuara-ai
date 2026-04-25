@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: construction-receptionist-config
+  namespace: construction-receptionist
+data:
+  APP_ENV: "prod"
+  LOG_LEVEL: "warn"
+  PORT: "8000"
+  PYTHONUNBUFFERED: "1"
+  COMPANY_NAME: "BuildPro Contracting"
+  BUSINESS_HOURS: "Monday through Friday, 8 AM to 6 PM. Emergency dispatch 24/7."
+  AZURE_OPENAI_API_VERSION: "2024-06-01"
+  REDIS_PORT: "6380"
+  REDIS_SSL: "true"
