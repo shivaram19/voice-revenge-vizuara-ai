@@ -7,7 +7,7 @@ name = "voice-agent-platform"
 version = "0.1.0"
 description = "Research-driven, production-grade voice agent platform"
 readme = "README.md"
-license = {text = "MIT"}
+license = {text = "SG-CPL-1.0"}
 requires-python = ">=3.10"
 dependencies = [
     # ASR (ADR-002)
