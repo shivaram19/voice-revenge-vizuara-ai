@@ -78,7 +78,7 @@ class AppConfig:
     """Application-level configuration."""
     env: str = "dev"
     log_level: str = "info"
-    company_name: str = "BuildPro Contracting"
+    company_name: str = "TreloLabs Voice AI"
     business_hours: str = "Monday through Friday, 8 AM to 6 PM. Emergency dispatch 24/7."
 
 
