@@ -1,0 +1,53 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: voice-agent-ingress
+  namespace: voice-agent
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "60"
+    # WebSocket support for Twilio Media Streams
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      proxy_set_header Upgrade $http_upgrade;
+      proxy_set_header Connection "upgrade";
+      proxy_set_header Host $host;
+      proxy_set_header X-Real-IP $remote_addr;
+      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+      proxy_set_header X-Forwarded-Proto $scheme;
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - voice-agent.example.com
+      secretName: voice-agent-tls
+  rules:
+    - host: voice-agent.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: agent-controller
+                port:
+                  number: 80
+          - path: /ws
+            pathType: Prefix
+            backend:
+              service:
+                name: agent-controller
+                port:
+                  number: 80
+---
+# Service account for workload identity
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: voice-agent-sa
+  namespace: voice-agent
+  annotations:
+    azure.workload.identity/client-id: ""  # Populated by deployment script

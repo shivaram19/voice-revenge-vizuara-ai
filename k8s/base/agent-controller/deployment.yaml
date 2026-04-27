@@ -1,0 +1,138 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent-controller
+  namespace: voice-agent
+  labels:
+    app: agent-controller
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: agent-controller
+  template:
+    metadata:
+      labels:
+        app: agent-controller
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: voice-agent-sa
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - agent-controller
+                topologyKey: kubernetes.io/hostname
+      containers:
+        - name: agent-controller
+          image: voiceagent.azurecr.io/agent-controller:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: voice-agent-config
+          env:
+            - name: AZURE_OPENAI_ENDPOINT
+              valueFrom:
+                secretKeyRef:
+                  name: voice-agent-secrets
+                  key: azure-openai-endpoint
+            - name: AZURE_OPENAI_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: voice-agent-secrets
+                  key: azure-openai-key
+            - name: REDIS_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: voice-agent-secrets
+                  key: redis-host
+            - name: REDIS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: voice-agent-secrets
+                  key: redis-key
+            - name: SEARCH_ENDPOINT
+              valueFrom:
+                secretKeyRef:
+                  name: voice-agent-secrets
+                  key: search-endpoint
+            - name: SEARCH_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: voice-agent-secrets
+                  key: search-key
+            - name: STORAGE_CONNECTION_STRING
+              valueFrom:
+                secretKeyRef:
+                  name: voice-agent-secrets
+                  key: storage-connection-string
+            - name: TWILIO_ACCOUNT_SID
+              valueFrom:
+                secretKeyRef:
+                  name: voice-agent-secrets
+                  key: twilio-account-sid
+            - name: TWILIO_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: voice-agent-secrets
+                  key: twilio-auth-token
+            - name: APPLICATIONINSIGHTS_CONNECTION_STRING
+              valueFrom:
+                secretKeyRef:
+                  name: voice-agent-secrets
+                  key: appinsights-connection-string
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+            limits:
+              cpu: "2000m"
+              memory: "2Gi"
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 999
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+      securityContext:
+        fsGroup: 999

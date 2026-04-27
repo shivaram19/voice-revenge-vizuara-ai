@@ -1,0 +1,50 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: voice-agent-config
+  namespace: voice-agent
+data:
+  # Application
+  APP_ENV: "prod"
+  APP_NAME: "voice-agent-platform"
+  LOG_LEVEL: "info"
+  
+  # Azure OpenAI
+  AZURE_OPENAI_DEPLOYMENT: "gpt-4o-mini"
+  AZURE_OPENAI_API_VERSION: "2024-06-01"
+  
+  # Redis
+  REDIS_PORT: "10000"
+  REDIS_SSL: "true"
+  
+  # Azure AI Search
+  SEARCH_INDEX_NAME: "faq-knowledge-base"
+  
+  # Blob Storage
+  BLOB_CONTAINER_RECORDINGS: "recordings"
+  BLOB_CONTAINER_FAQ: "faq-documents"
+  
+  # Receptionist
+  COMPANY_NAME: "Acme Medical"
+  BUSINESS_HOURS: "Monday through Friday, 9 AM to 5 PM."
+  MAX_TURNS_PER_CALL: "50"
+  TOOL_TIMEOUT_SECONDS: "3.0"
+  
+  # Telephony
+  TWILIO_STREAM_FORMAT: "audio/x-mulaw"
+  TWILIO_STREAM_SAMPLE_RATE: "8000"
+  
+  # Observability
+  OTEL_SERVICE_NAME: "voice-agent-controller"
+  PROMETHEUS_PORT: "9090"
+  
+  # STT
+  STT_MODEL_SIZE: "distil-large-v3"
+  STT_COMPUTE_TYPE: "float16"
+  STT_BEAM_SIZE: "5"
+  STT_VAD_FILTER: "true"
+  STT_VAD_MIN_SILENCE_MS: "300"
+  
+  # TTS
+  TTS_VOICE_NAME: "en_US-lessac-high"
+  TTS_LENGTH_SCALE: "1.0"

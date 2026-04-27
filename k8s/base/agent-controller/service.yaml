@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: agent-controller
+  namespace: voice-agent
+  labels:
+    app: agent-controller
+spec:
+  type: ClusterIP
+  selector:
+    app: agent-controller
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8000
+      protocol: TCP
+    - name: metrics
+      port: 9090
+      targetPort: 9090
+      protocol: TCP
