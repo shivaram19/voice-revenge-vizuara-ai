@@ -6,7 +6,7 @@ metadata:
 data:
   # Application
   APP_ENV: "prod"
-  APP_NAME: "voice-agent-platform"
+  APP_NAME: "trelolabs-voice-agent"
   LOG_LEVEL: "info"
   
   # Azure OpenAI
@@ -25,7 +25,7 @@ data:
   BLOB_CONTAINER_FAQ: "faq-documents"
   
   # Receptionist
-  COMPANY_NAME: "Acme Medical"
+  COMPANY_NAME: "TreloLabs Voice AI"
   BUSINESS_HOURS: "Monday through Friday, 9 AM to 5 PM."
   MAX_TURNS_PER_CALL: "50"
   TOOL_TIMEOUT_SECONDS: "3.0"
@@ -35,7 +35,7 @@ data:
   TWILIO_STREAM_SAMPLE_RATE: "8000"
   
   # Observability
-  OTEL_SERVICE_NAME: "voice-agent-controller"
+  OTEL_SERVICE_NAME: "trelolabs-voice-agent"
   PROMETHEUS_PORT: "9090"
   
   # STT

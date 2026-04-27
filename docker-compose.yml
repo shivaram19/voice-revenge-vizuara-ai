@@ -32,7 +32,7 @@ services:
       - AZURE_OPENAI_DEPLOYMENT=gpt-4o-mini
       - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
       - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
-      - COMPANY_NAME=BuildPro Contracting
+      - COMPANY_NAME=TreloLabs Voice AI
       - BUSINESS_HOURS=Monday through Friday, 8 AM to 6 PM. Emergency dispatch 24/7.
     volumes:
       - ./data:/app/data

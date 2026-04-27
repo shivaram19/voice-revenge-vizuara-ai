@@ -14,7 +14,16 @@ Architecture:
     (abstracted)             (contractor, schedule, FAQ)
 """
 
+from pathlib import Path
+from dotenv import load_dotenv
 from fastapi import FastAPI, WebSocket
+from fastapi.staticfiles import StaticFiles
+
+# Load .env before any other imports that read os.environ.
+# Ref: 12-Factor App — config in environment [^88]; OWASP secrets guidance [^89].
+env_path = Path(__file__).parent.parent.parent / ".env"
+if env_path.exists():
+    load_dotenv(dotenv_path=str(env_path))
 
 from src.api.lifespan import lifespan
 from src.api.routes import router as voice_router
@@ -23,13 +32,18 @@ from src.api.metrics import router as metrics_router
 from src.api.websockets import handle_twilio_websocket
 
 app = FastAPI(
-    title="Construction Receptionist",
-    description="AI Receptionist for building trades — Azure-deployed",
+    title="TreloLabs Voice Agent",
+    description="AI-powered voice receptionist for business calls — deployed at voice.trelolabs.com",
     version="0.1.0",
     lifespan=lifespan,
 )
 
-# Include routers
+# Static files served under /static for assets
+static_dir = Path(__file__).parent / "static"
+if static_dir.exists():
+    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+
+# Include API routers
 app.include_router(health_router)
 app.include_router(metrics_router)
 app.include_router(voice_router)

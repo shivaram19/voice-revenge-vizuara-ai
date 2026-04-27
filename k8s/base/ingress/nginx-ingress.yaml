@@ -22,10 +22,10 @@ spec:
   ingressClassName: nginx
   tls:
     - hosts:
-        - voice-agent.example.com
-      secretName: voice-agent-tls
+        - voice.trelolabs.com
+      secretName: voice-trelolabs-tls
   rules:
-    - host: voice-agent.example.com
+    - host: voice.trelolabs.com
       http:
         paths:
           - path: /

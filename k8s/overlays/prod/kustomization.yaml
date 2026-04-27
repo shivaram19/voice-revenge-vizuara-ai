@@ -51,7 +51,10 @@ patches:
     patch: |-
       - op: replace
         path: /spec/rules/0/host
-        value: "voice.acme-medical.com"
+        value: "voice.trelolabs.com"
       - op: replace
         path: /spec/tls/0/hosts/0
-        value: "voice.acme-medical.com"
+        value: "voice.trelolabs.com"
+      - op: replace
+        path: /spec/tls/0/secretName
+        value: "voice-trelolabs-tls"

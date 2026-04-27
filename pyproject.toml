@@ -35,6 +35,12 @@ dependencies = [
     "opentelemetry-sdk>=1.24.0",
     "structlog>=24.1.0",
     
+    # Telephony (ADR-001, ADR-005)
+    "twilio>=9.0.0",
+    
+    # Configuration
+    "python-dotenv>=1.0.0",
+    
     # Data processing
     "numpy>=1.26.0",
     "librosa>=0.10.0",
