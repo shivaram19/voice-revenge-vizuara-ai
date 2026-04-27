@@ -1,9 +1,7 @@
 # syntax=docker/dockerfile:1
-"""
-Agent Controller Dockerfile
-FastAPI + WebSocket server for Twilio telephony integration.
-Ref: ADR-005; SigArch 2026 streaming architecture.
-"""
+# Agent Controller Dockerfile
+# FastAPI + WebSocket server for Twilio telephony integration.
+# Ref: ADR-005; SigArch 2026 streaming architecture.
 
 FROM python:3.11-slim-bookworm AS builder
 
@@ -26,6 +24,9 @@ RUN pip install --no-cache-dir --upgrade pip \
         uvicorn[standard]>=0.29.0 \
         websockets>=12.0 \
         openai>=1.30.0 \
+        twilio>=9.0.0 \
+        python-dotenv>=1.0.0 \
+        requests>=2.31.0 \
         qdrant-client>=1.9.0 \
         faiss-cpu>=1.8.0 \
         prometheus-client>=0.20.0 \
