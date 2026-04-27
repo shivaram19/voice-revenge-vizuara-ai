@@ -1,0 +1,70 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "voice-agent-platform"
+version = "0.1.0"
+description = "Research-driven, production-grade voice agent platform"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+dependencies = [
+    # ASR (ADR-002)
+    "faster-whisper>=1.0.0",
+    "transformers>=4.40.0",
+    
+    # TTS (ADR-004)
+    "piper-tts>=1.2.0",
+    
+    # LLM serving (ADR-TBD)
+    "openai>=1.30.0",
+    "vllm>=0.5.0",
+    
+    # Memory & RAG (ADR-003)
+    "faiss-cpu>=1.8.0",
+    "qdrant-client>=1.9.0",
+    
+    # Streaming & transport (ADR-001)
+    "websockets>=12.0",
+    "aiortc>=1.9.0",
+    
+    # Infrastructure
+    "prometheus-client>=0.20.0",
+    "opentelemetry-api>=1.24.0",
+    "opentelemetry-sdk>=1.24.0",
+    "structlog>=24.1.0",
+    
+    # Data processing
+    "numpy>=1.26.0",
+    "librosa>=0.10.0",
+    "soundfile>=0.12.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "black>=24.0.0",
+    "mypy>=1.10.0",
+    "ruff>=0.4.0",
+]
+gpu = [
+    "faiss-gpu>=1.8.0",
+    "torch>=2.3.0",
+]
+
+[tool.black]
+line-length = 100
+target-version = ['py310']
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+warn_return_any = true
+warn_unused_ignores = true
+
+[tool.ruff]
+line-length = 100
+select = ["E", "F", "I", "W", "UP"]
+ignore = ["E501"]
