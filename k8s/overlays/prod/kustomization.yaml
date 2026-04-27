@@ -1,0 +1,57 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: voice-agent
+
+resources:
+  - ../../base/namespace.yaml
+  - ../../base/configmap.yaml
+  - ../../base/agent-controller/deployment.yaml
+  - ../../base/agent-controller/service.yaml
+  - ../../base/agent-controller/hpa.yaml
+  - ../../base/stt-service/deployment.yaml
+  - ../../base/stt-service/service.yaml
+  - ../../base/tts-service/deployment.yaml
+  - ../../base/tts-service/service.yaml
+  - ../../base/ingress/nginx-ingress.yaml
+  - ../../base/monitoring/servicemonitor.yaml
+
+namePrefix: prod-
+
+replicas:
+  - name: agent-controller
+    count: 5
+  - name: stt-service
+    count: 4
+  - name: tts-service
+    count: 5
+
+images:
+  - name: voiceagent.azurecr.io/agent-controller
+    newTag: prod
+  - name: voiceagent.azurecr.io/stt-service
+    newTag: prod
+  - name: voiceagent.azurecr.io/tts-service
+    newTag: prod
+
+patches:
+  - target:
+      kind: ConfigMap
+      name: voice-agent-config
+    patch: |-
+      - op: replace
+        path: /data/APP_ENV
+        value: "prod"
+      - op: replace
+        path: /data/LOG_LEVEL
+        value: "warn"
+  - target:
+      kind: Ingress
+      name: voice-agent-ingress
+    patch: |-
+      - op: replace
+        path: /spec/rules/0/host
+        value: "voice.acme-medical.com"
+      - op: replace
+        path: /spec/tls/0/hosts/0
+        value: "voice.acme-medical.com"

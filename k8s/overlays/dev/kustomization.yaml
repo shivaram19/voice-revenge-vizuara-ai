@@ -1,0 +1,55 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: voice-agent-dev
+
+resources:
+  - ../../base/namespace.yaml
+  - ../../base/configmap.yaml
+  - ../../base/agent-controller/deployment.yaml
+  - ../../base/agent-controller/service.yaml
+  - ../../base/stt-service/deployment.yaml
+  - ../../base/stt-service/service.yaml
+  - ../../base/tts-service/deployment.yaml
+  - ../../base/tts-service/service.yaml
+
+namePrefix: dev-
+
+replicas:
+  - name: agent-controller
+    count: 1
+  - name: stt-service
+    count: 1
+  - name: tts-service
+    count: 1
+
+images:
+  - name: voiceagent.azurecr.io/agent-controller
+    newTag: dev
+  - name: voiceagent.azurecr.io/stt-service
+    newTag: dev
+  - name: voiceagent.azurecr.io/tts-service
+    newTag: dev
+
+patches:
+  - target:
+      kind: Deployment
+      name: agent-controller
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: "1Gi"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: "1000m"
+  - target:
+      kind: Deployment
+      name: stt-service
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/nvidia.com~1gpu
+        value: "0"
+      - op: remove
+        path: /spec/template/spec/nodeSelector
+      - op: remove
+        path: /spec/template/spec/tolerations
