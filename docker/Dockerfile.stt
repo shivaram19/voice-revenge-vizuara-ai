@@ -1,0 +1,99 @@
+# syntax=docker/dockerfile:1
+"""
+STT Service Dockerfile
+Self-hosted Distil-Whisper via faster-whisper on NVIDIA GPU.
+Ref: ADR-002; Gandhi et al. 2023; SYSTRAN 2023.
+
+Base image: NVIDIA CUDA runtime with Python 3.11.
+Model: distil-whisper/distil-large-v3 (~756M parameters, 49% smaller than Whisper large-v3).
+Capacity: ~50 concurrent streams per A10G GPU (RTF 0.17x).
+"""
+
+FROM nvidia/cuda:12.1.1-runtime-ubuntu22.04 AS builder
+
+WORKDIR /build
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+# Install Python 3.11 and build tools
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.11 \
+    python3.11-dev \
+    python3-pip \
+    build-essential \
+    libffi-dev \
+    && rm -rf /var/lib/apt/lists/* \
+    && update-alternatives --install /usr/bin/python python /usr/bin/python3.11 1 \
+    && update-alternatives --install /usr/bin/pip pip /usr/bin/pip3 1
+
+# Pre-download model to bake into image (avoids cold-start download)
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir \
+        faster-whisper>=1.0.0 \
+        transformers>=4.40.0 \
+        torch>=2.3.0 \
+        numpy>=1.26.0 \
+        prometheus-client>=0.20.0 \
+        uvicorn>=0.29.0 \
+        fastapi>=0.111.0
+
+# Download Distil-Whisper model (~1.5GB)
+RUN python -c "from faster_whisper import WhisperModel; WhisperModel('distil-large-v3', device='cuda', compute_type='float16')"
+
+# ---------------------------------------------------------------------------
+# Production stage
+# ---------------------------------------------------------------------------
+FROM nvidia/cuda:12.1.1-runtime-ubuntu22.04 AS production
+
+WORKDIR /app
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV CUDA_VISIBLE_DEVICES=0
+
+# Install Python 3.11 runtime only
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.11 \
+    python3-pip \
+    libgomp1 \
+    && rm -rf /var/lib/apt/lists/* \
+    && update-alternatives --install /usr/bin/python python /usr/bin/python3.11 1 \
+    && update-alternatives --install /usr/bin/pip pip /usr/bin/pip3 1
+
+# Copy installed packages and cached model from builder
+COPY --from=builder /usr/local/lib/python3.11/dist-packages /usr/local/lib/python3.11/dist-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
+COPY --from=builder /root/.cache/huggingface /root/.cache/huggingface
+
+# Copy STT service source
+COPY src/asr/ ./src/asr/
+COPY src/infrastructure/ ./src/infrastructure/
+COPY src/streaming/ ./src/streaming/
+COPY docker/entrypoint.stt.sh /app/entrypoint.sh
+
+# Non-root user
+RUN groupadd -r voiceagent && useradd -r -g voiceagent voiceagent \
+    && mkdir -p /home/voiceagent/.cache \
+    && cp -r /root/.cache/huggingface /home/voiceagent/.cache/ \
+    && chown -R voiceagent:voiceagent /app /home/voiceagent
+
+USER voiceagent
+
+EXPOSE 8000
+
+ENV PYTHONPATH=/app
+ENV PORT=8000
+ENV MODEL_SIZE=distil-large-v3
+ENV COMPUTE_TYPE=float16
+ENV BEAM_SIZE=5
+ENV BEST_OF=5
+ENV VAD_FILTER=true
+ENV VAD_PARAMETERS_MIN_SILENCE_DURATION_MS=300
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"
+
+ENTRYPOINT ["/app/entrypoint.sh"]

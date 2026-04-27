@@ -1,0 +1,59 @@
+"""
+AI Receptionist — Local Development Stack
+Lightweight Docker Compose for 10-50 concurrent call capacity.
+No GPU required. Uses SQLite + cloud APIs for STT/TTS/LLM.
+
+Usage:
+  docker-compose up --build
+
+Services:
+  - app: FastAPI receptionist (port 8000)
+  - redis: Session cache (port 6379)
+"""
+
+version: "3.8"
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.agent
+    ports:
+      - "8000:8000"
+    environment:
+      - APP_ENV=dev
+      - LOG_LEVEL=info
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_SSL=false
+      - REDIS_KEY=
+      - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT}
+      - AZURE_OPENAI_KEY=${AZURE_OPENAI_KEY}
+      - AZURE_OPENAI_DEPLOYMENT=gpt-4o-mini
+      - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
+      - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
+      - COMPANY_NAME=BuildPro Contracting
+      - BUSINESS_HOURS=Monday through Friday, 8 AM to 6 PM. Emergency dispatch 24/7.
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      - redis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/live')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+
+volumes:
+  redis_data:

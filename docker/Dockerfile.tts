@@ -1,0 +1,81 @@
+# syntax=docker/dockerfile:1
+"""
+TTS Service Dockerfile
+Self-hosted Piper TTS on CPU. Edge-deployable, 7M parameters.
+Ref: ADR-004; Hansen 2023.
+
+Voice: en_US-lessac-high (high quality female voice, CC-BY-NC-SA 4.0).
+RTF: ~0.1x on x86 CPU (real-time with headroom).
+"""
+
+FROM python:3.11-slim-bookworm AS builder
+
+WORKDIR /build
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    libsndfile1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install piper-tts and download voice model
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir \
+        piper-tts>=1.2.0 \
+        numpy>=1.26.0 \
+        soundfile>=0.12.0 \
+        uvicorn>=0.29.0 \
+        fastapi>=0.111.0 \
+        prometheus-client>=0.20.0
+
+# Download voice model (~100MB)
+RUN mkdir -p /usr/share/piper-voices && cd /usr/share/piper-voices \
+    && python -c "from piper.download import ensure_voice_exists; ensure_voice_exists('en_US-lessac-high', '/usr/share/piper-voices', '/usr/share/piper-voices')"
+
+# ---------------------------------------------------------------------------
+# Production stage
+# ---------------------------------------------------------------------------
+FROM python:3.11-slim-bookworm AS production
+
+WORKDIR /app
+
+# Runtime dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libsndfile1 \
+    libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy installed packages
+COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
+COPY --from=builder /usr/share/piper-voices /usr/share/piper-voices
+
+# Copy TTS service source
+COPY src/tts/ ./src/tts/
+COPY src/infrastructure/ ./src/infrastructure/
+COPY src/streaming/ ./src/streaming/
+COPY docker/entrypoint.tts.sh /app/entrypoint.sh
+
+# Non-root user
+RUN groupadd -r voiceagent && useradd -r -g voiceagent voiceagent \
+    && chown -R voiceagent:voiceagent /app /usr/share/piper-voices
+
+USER voiceagent
+
+EXPOSE 8000
+
+ENV PYTHONPATH=/app
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV PORT=8000
+ENV PIPER_VOICE_DIR=/usr/share/piper-voices
+ENV PIPER_VOICE_NAME=en_US-lessac-high
+ENV PIPER_SPEAKER_ID=0
+ENV PIPER_LENGTH_SCALE=1.0
+ENV PIPER_NOISE_SCALE=0.667
+ENV PIPER_NOISEW=0.333
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"
+
+ENTRYPOINT ["/app/entrypoint.sh"]

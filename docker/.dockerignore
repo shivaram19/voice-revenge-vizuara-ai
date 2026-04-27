@@ -1,0 +1,58 @@
+# Git
+.git
+.gitignore
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Documentation (not needed in containers)
+docs/
+*.md
+
+# Tests (not needed in production containers)
+tests/
+.pytest_cache/
+
+# Infrastructure (not needed in containers)
+infrastructure/
+k8s/
+scripts/
+
+# CI/CD (not needed in containers)
+.github/
+
+# Local dev
+.env
+.env.local
+*.local.yml
+*.local.yaml
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+
+# Large model files (downloaded at build time instead)
+*.bin
+*.safetensors
+*.onnx
+models/
