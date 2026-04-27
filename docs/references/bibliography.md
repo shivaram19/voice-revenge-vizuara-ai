@@ -208,6 +208,39 @@
 77. **arXiv.** (2025). Whisper Turns Stronger: Augmenting Wav2Vec 2.0 for Superior ASR. *arXiv:2501.00425*.
 78. **IWLSDS.** (2025). Analysis of Voice Activity Detection Errors in API-based Dialogue Systems.
 
-*Bibliography compiled: 2026-04-25*
-*Total entries: 78*
-*Coverage: ASR (6), TTS (5), LLM/Agents (4), Streaming (5), Infrastructure (6), Architecture (6), VAD (4), Memory (3), S2S (2), API Design (2)*
+79. **Fielding, R. T.** (2000). Architectural Styles and the Design of Network-based Software Architectures. *PhD thesis, University of California, Irvine*.
+    - *REST architectural style. Statelessness, cacheability, layered system.*
+
+80. **Twilio.** (2024). Recordings API Documentation. *twilio.com/docs/voice/api/recording*.
+    - *Dual-channel recording, callback delivery, secure storage.*
+
+81. **Twilio.** (2024). Privacy and Compliance Guide for Call Recording. *twilio.com/docs/glossary/what-is-call-recording*.
+    - *One-party vs all-party consent. PCI-DSS and HIPAA considerations.*
+
+82. **Google.** (2019). Search Engine Optimization (SEO) Starter Guide. *developers.google.com/search/docs/fundamentals/seo-starter-guide*.
+    - *Domain structure, path vs subdomain ranking considerations.*
+
+83. **Barth, A.** (2011). RFC 6265: HTTP State Management Mechanism. *IETF*.
+    - *Cookie scope, Domain attribute, same-origin policy.*
+
+84. **Fielding, R. T.** (2000). Architectural Styles and the Design of Network-based Software Architectures. *PhD thesis, UC Irvine*.
+    - *REST constraints: layered system, cacheability, uniform interface.*
+
+85. **Nielsen, J., & Loranger, H.** (2006). *Prioritizing Web Usability*. New Riders.
+    - *Trust and credibility signals in web interfaces.*
+
+86. **Let's Encrypt.** (2024). ACME Protocol Documentation. *letsencrypt.org/docs*.
+    - *Automated TLS certificate provisioning.*
+
+87. **Moz.** (2024). Domain SEO Explained. *moz.com/learn/seo/domain*.
+    - *Subdomain vs subdirectory ranking implications.*
+
+88. **Wiggins, A.** (2017). The Twelve-Factor App. *12factor.net*.
+    - *Config in environment, stateless processes, dev/prod parity.*
+
+89. **OWASP.** (2023). Secrets Management Cheat Sheet. *owasp.org*.
+    - *Env vars preferred over hardcoded secrets. Rotation policies.*
+
+*Bibliography compiled: 2026-04-27*
+*Total entries: 89*
+*Coverage: ASR (6), TTS (5), LLM/Agents (4), Streaming (5), Infrastructure (6), Architecture (6), VAD (4), Memory (3), S2S (2), API Design (3), Telephony Compliance (1), Web UX (1), Security (1)*
