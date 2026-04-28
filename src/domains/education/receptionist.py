@@ -24,9 +24,10 @@ class EducationReceptionist(BaseReceptionist):
 
     def _greeting_text(self) -> str:
         return (
-            f"Thank you for calling {self.config.company_name}. "
-            "I can help with course inquiries, admissions, or fee payments. "
-            "How may I assist you today?"
+            f"Namaste. Thank you for calling {self.config.company_name}. "
+            "It is our privilege to guide you. "
+            "I can help with course inquiries, admissions, or fee details. "
+            "How may I be of service, Sir or Madam?"
         )
 
     def _build_messages(

@@ -42,6 +42,7 @@ class StreamingSTTConfig:
     utterance_end_ms: int = 1000     # ms trailing capture [^23]
     vad_events: bool = True          # Enable SpeechStarted events for barge-in [^28]
     filler_words: bool = True        # Keep "um", "uh" for naturalness
+    redact: str = ""                  # PII redaction: "pci,ssn,numbers" [^27]
 
 
 @dataclass
@@ -84,6 +85,10 @@ class StreamingDeepgramSTT:
         self._pending_interim: str = ""
         self._final_buffer: str = ""
 
+        # Logging
+        from src.infrastructure.logging_config import get_logger
+        self._logger = get_logger("streaming.stt")
+
     # ------------------------------------------------------------------
     # Connection lifecycle
     # ------------------------------------------------------------------
@@ -107,17 +112,18 @@ class StreamingDeepgramSTT:
         self._on_error = on_error
 
         url = self._build_url()
+        headers = {"Authorization": f"Token {self.config.api_key}"}
 
         try:
-            self._ws = await websockets.connect(url)
+            self._ws = await websockets.connect(url, additional_headers=headers)
             self._connected = True
             self._closed = False
             self._receive_task = asyncio.create_task(
                 self._receive_loop(), name="deepgram-receive"
             )
-            print("[StreamingSTT] Connected to Deepgram streaming")
+            self._logger.info("deepgram_connected")
         except Exception as e:
-            print(f"[StreamingSTT] Connection failed: {e}")
+            self._logger.error("deepgram_connection_failed", error=str(e))
             if self._on_error:
                 self._on_error(str(e))
             raise
@@ -140,7 +146,7 @@ class StreamingDeepgramSTT:
             self._ws = None
 
         self._connected = False
-        print("[StreamingSTT] Disconnected")
+        self._logger.info("deepgram_disconnected")
 
     # ------------------------------------------------------------------
     # Audio input
@@ -205,7 +211,7 @@ class StreamingDeepgramSTT:
                 self._on_utterance_end()
         elif msg_type == "Error":
             err = data.get("description", "Unknown Deepgram error")
-            print(f"[StreamingSTT] Deepgram error: {err}")
+            self._logger.error("deepgram_error", description=err)
             if self._on_error:
                 self._on_error(err)
 
@@ -244,12 +250,9 @@ class StreamingDeepgramSTT:
     # ------------------------------------------------------------------
 
     def _build_url(self) -> str:
-        """Build the Deepgram streaming WebSocket URL with query params.
-        Auth via token query param (avoids websockets header API variance) [^43].
-        """
+        """Build the Deepgram streaming WebSocket URL with query params."""
         base = "wss://api.deepgram.com/v1/listen"
         params = {
-            "token": self.config.api_key,
             "model": self.config.model,
             "language": self.config.language,
             "encoding": self.config.encoding,
@@ -262,6 +265,8 @@ class StreamingDeepgramSTT:
             "vad_events": str(self.config.vad_events).lower(),
             "filler_words": str(self.config.filler_words).lower(),
         }
+        if self.config.redact:
+            params["redact"] = self.config.redact
         query = "&".join(f"{k}={v}" for k, v in params.items())
         return f"{base}?{query}"
 

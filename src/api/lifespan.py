@@ -17,6 +17,8 @@ from src.telephony.twilio_gateway import TwilioGateway
 from src.infrastructure.interfaces import DomainPort
 from src.domains.registry import DomainRegistry
 from src.domains.router import DomainRouter
+from src.infrastructure.logging_config import configure_logging, get_logger
+from src.infrastructure.telemetry import init_telemetry
 
 
 def _discover_domains() -> List[DomainPort]:
@@ -46,15 +48,25 @@ def _discover_domains() -> List[DomainPort]:
                 ):
                     discovered.append(attr())
         except ImportError as e:
-            print(f"  [WARN] Could not import domain '{name}.domain': {e}")
+            logger = get_logger("lifespan")
+            logger.warning("domain_import_failed", domain=name, error=str(e))
         except AttributeError as e:
-            print(f"  [WARN] Domain '{name}' missing expected attributes: {e}")
+            logger = get_logger("lifespan")
+            logger.warning("domain_attribute_error", domain=name, error=str(e))
     return discovered
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage application lifecycle."""
+    # Logging first — everything below uses it
+    configure_logging(log_level=os.getenv("LOG_LEVEL", "INFO"))
+    logger = get_logger("lifespan")
+
+    # Telemetry — OpenTelemetry + Application Insights
+    telemetry = init_telemetry(service_name="voice-agent-api")
+    logger.info("telemetry_initialized", enabled=telemetry.get("enabled", False))
+
     # Startup
     config = AzureConfig.from_env()
     missing = config.validate()
@@ -63,7 +75,7 @@ async def lifespan(app: FastAPI):
     if missing and not demo_mode:
         raise RuntimeError(f"Missing required config: {', '.join(missing)}")
     if demo_mode and missing:
-        print(f"[WARN] DEMO_MODE active. Missing configs: {', '.join(missing)}")
+        logger.warning("demo_mode_missing_configs", configs=missing)
 
     app.state.config = config
     app.state.telephony = TwilioGateway()
@@ -79,12 +91,12 @@ async def lifespan(app: FastAPI):
     app.state.domain_registry = domain_registry
     app.state.domain_router = domain_router
 
-    print(f"  Registered domains: {domain_registry.list_domains()}")
+    logger.info("domains_registered", domains=domain_registry.list_domains())
 
     if demo_mode:
         from src.infrastructure.demo_pipeline import DemoPipeline
         app.state.demo_pipeline = DemoPipeline()
-        print("  DEMO MODE: Local CPU pipeline active (faster-whisper + MockLLM + Piper)")
+        logger.info("demo_mode_active")
     else:
         from src.infrastructure.production_pipeline import ProductionPipeline
         from src.infrastructure.demo_stt_deepgram import DemoSTTDeepgram
@@ -102,15 +114,18 @@ async def lifespan(app: FastAPI):
             llm_factory=AzureOpenAILLMClient,
             deepgram_api_key=os.getenv("DEEPGRAM_API_KEY", ""),
         )
-        print("  PROD MODE: Cloud pipeline active (Deepgram STT + Azure OpenAI + Aura TTS)")
+        logger.info("prod_mode_active")
 
-    print(f"Voice Agent Controller started")
+    logger.info("voice_agent_started")
     if not demo_mode:
-        print(f"  OpenAI endpoint: {config.openai_endpoint}")
-        print(f"  Redis host: {config.redis_host}")
-    print(f"  Twilio account: {config.twilio_account_sid[:6]}...")
+        logger.info(
+            "config_summary",
+            openai_endpoint=config.openai_endpoint,
+            redis_host=config.redis_host,
+            twilio_account=config.twilio_account_sid[:6],
+        )
 
     yield
 
     # Shutdown
-    print("Voice Agent Controller shutting down...")
+    logger.info("voice_agent_shutting_down")
