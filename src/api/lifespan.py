@@ -36,10 +36,14 @@ async def lifespan(app: FastAPI):
     from src.domains.router import DomainRouter
     from src.domains.construction import ConstructionDomain
     from src.domains.education import EducationDomain
+    from src.domains.pharma import PharmaDomain
+    from src.domains.hospitality import HospitalityDomain
 
     domain_registry = DomainRegistry()
     domain_registry.register(ConstructionDomain())
     domain_registry.register(EducationDomain())
+    domain_registry.register(PharmaDomain())
+    domain_registry.register(HospitalityDomain())
     domain_router = DomainRouter(domain_registry)
 
     app.state.domain_registry = domain_registry
