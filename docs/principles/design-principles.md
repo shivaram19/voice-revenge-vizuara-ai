@@ -6,14 +6,24 @@ This document defines the operating principles that govern every architectural d
 
 ## 1. Research-Driven Decision Making
 
-**Principle**: Every technical decision must cite the specific research paper, RFC, or canonical industry whitepaper that justifies it.
+**Principle**: Every technical decision must cite the specific research paper, RFC, or canonical industry whitepaper that justifies it. This principle is governed by the **Research-First Covenant** (`docs/principles/research-first-covenant.md`), which mandates a three-phase research protocol (BFS → DFS → Bidirectional) before any code is written.
 
 **Application**:
 - Before choosing Whisper over wav2vec 2.0, we cite Radford et al. (2022) on weakly supervised scaling to 680,000 hours [^1].
 - Before picking WebSockets over gRPC streaming, we cite IETF RFC 6455 and latency benchmarks.
 - Before choosing CQRS, we cite Newman (2015) and measured 84% read-performance improvement [^28].
+- Before adding any dependency, we complete a TCO analysis with citations [^30].
+- Before committing any architectural change, we write an ADR with numbered references [^88].
 
-**Anti-pattern**: "Because everyone uses it." "Because it feels faster." "Because the blog post said so."
+**The Six Commandments** (see full covenant for elaboration):
+1. **No Code Without Citation** — Every claim gets a numbered reference.
+2. **Three-Phase Research Protocol** — BFS (landscape) → DFS (validation) → Bidirectional (cross-impact).
+3. **ADR-First Rule** — No implementation without a documented Architecture Decision Record.
+4. **10-Persona Filter** — Every decision passes through all ten dimensional lenses.
+5. **Cost-of-Error Principle** — Front-load research; production fixes cost 100× more [^92].
+6. **Reproducibility Guarantee** — Every claim must be reproducible by someone else.
+
+**Anti-pattern**: "Because everyone uses it." "Because it feels faster." "Because the blog post said so." "Because the vendor recommends it." (Marketing is not evidence.)
 
 ---
 

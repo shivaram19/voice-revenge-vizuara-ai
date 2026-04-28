@@ -65,6 +65,16 @@ Claim about Whisper latency [^1].
 - Do NOT commit code without corresponding interface updates.
 - Do NOT use unverified blog posts as primary citations.
 
+## Research-First Covenant (Mandatory)
+
+All architectural decisions must follow the **Research-First Covenant** defined in `docs/principles/research-first-covenant.md`. This is not optional. Key requirements:
+
+1. **No code is written before research is complete.** The workflow is: Decompose → BFS → DFS → Bidirectional → ADR → Code.
+2. **Every claim requires a citation.** Numbered references to T1–T3 sources (peer-reviewed papers, arXiv with reproduction, canonical whitepapers). Blog posts and marketing materials are prohibited as primary citations.
+3. **Every architectural decision requires an ADR.** `docs/adrs/ADR-###-{topic}.md` with Context, Decision, Consequences, Alternatives, and References.
+4. **The 10-Persona Filter applies to every change.** Each persona demands specific evidence (see `design-principles.md`).
+5. **Anti-patterns are architectural malpractice.** "Just use X, everyone does" / "The docs say it's fast" / "We'll fix it in production" are instant violations.
+
 ## Decision Authority
 
 When in doubt:
@@ -72,8 +82,10 @@ When in doubt:
 2. Prefer open-source with active community over proprietary lock-in.
 3. Prefer stateless services over stateful ones.
 4. Prefer event-driven over synchronous RPC for cross-service communication.
+5. **Prefer research-backed decisions over intuition.** Cite before you commit.
 
 ---
 
-*Document version: 1.0*  
-*Established: 2026-04-25*
+*Document version: 1.1*  
+*Established: 2026-04-25*  
+*Updated: 2026-04-27 (Research-First Covenant added)*
