@@ -47,7 +47,7 @@ import wave
 from datetime import datetime, timedelta
 from pathlib import Path
 from dataclasses import dataclass, field
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Callable
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
@@ -402,11 +402,21 @@ class DemoPipeline:
     # Public API for WebSocket handler
     # -------------------------------------------------------------------
 
-    async def on_call_start(self, session_id: str, caller: str, called: str) -> bytes:
+    async def on_call_start(
+        self,
+        session_id: str,
+        caller: str,
+        called: str,
+        domain_id: Optional[str] = None,
+        send_callback: Optional[Callable[[bytes], Any]] = None,
+    ) -> bytes:
         """Initialize session and return greeting audio bytes (μ-law 8kHz)."""
         greeting_text = await self.receptionist.handle_call_start(session_id, caller, called)
         self._buffers[session_id] = AudioBuffer()
-        return self._synthesize_to_ulaw(greeting_text)
+        audio = self._synthesize_to_ulaw(greeting_text)
+        if send_callback:
+            await send_callback(audio)
+        return audio
 
     async def on_media_chunk(self, session_id: str, payload_b64: str) -> Optional[bytes]:
         """

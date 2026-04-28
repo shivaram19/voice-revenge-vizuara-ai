@@ -12,6 +12,7 @@ Research Provenance:
 """
 
 from pathlib import Path
+from urllib.parse import parse_qs
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import HTMLResponse, PlainTextResponse
 from datetime import datetime
@@ -44,14 +45,20 @@ async def twilio_inbound(request: Request) -> Response:
     satisfying the PSTN standard (ITU-T G.711) while allowing the agent
     controller to work with 16 kHz PCM for STT [^38][^43].
     """
+    # Twilio POSTs form data including CallSid, From, To, etc.
+    # Parse manually — avoids python-multipart dependency in container.
+    body_bytes = await request.body()
+    form = {k: v[0] if len(v) == 1 else v for k, v in parse_qs(body_bytes.decode("utf-8", errors="replace")).items()}
+    call_sid = form.get("CallSid", "unknown")
+
     # Build absolute WebSocket URL from the incoming request
     base_url = str(request.base_url).rstrip("/")
     # In production behind TLS, force wss://
     # Ref: RFC 6455 §11.1 — WebSocket scheme matches HTTP scheme [^21].
     if base_url.startswith("https://"):
-        ws_url = base_url.replace("https://", "wss://", 1) + "/ws/twilio/inbound"
+        ws_url = base_url.replace("https://", "wss://", 1) + f"/ws/twilio/{call_sid}"
     else:
-        ws_url = base_url.replace("http://", "ws://", 1) + "/ws/twilio/inbound"
+        ws_url = base_url.replace("http://", "ws://", 1) + f"/ws/twilio/{call_sid}"
 
     # Support explicit domain routing via query parameter for outbound calls.
     # Outbound calls initiated via REST API may not include caller/callee
@@ -65,7 +72,7 @@ async def twilio_inbound(request: Request) -> Response:
 
     twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Say voice="Polly.Joanna">Thank you for calling TreloLabs Voice AI. Connecting you to our virtual receptionist.</Say>
+    <Say voice="Polly.Joanna">Thank you for calling. Connecting you to our virtual receptionist.</Say>
     <Connect>
         <Stream url="{ws_url}">
             {custom_params}
@@ -83,7 +90,8 @@ async def twilio_recording(request: Request) -> dict:
     Twilio POSTs here when a recording is ready.
     Ref: Twilio Recordings API [^80].
     """
-    form = await request.form()
+    body_bytes = await request.body()
+    form = {k: v[0] if len(v) == 1 else v for k, v in parse_qs(body_bytes.decode("utf-8", errors="replace")).items()}
     recording_url = form.get("RecordingUrl", "")
     recording_sid = form.get("RecordingSid", "")
     call_sid = form.get("CallSid", "")

@@ -87,7 +87,6 @@ async def lifespan(app: FastAPI):
         print("  DEMO MODE: Local CPU pipeline active (faster-whisper + MockLLM + Piper)")
     else:
         from src.infrastructure.production_pipeline import ProductionPipeline
-        from src.telephony.twilio_gateway import TwilioGateway
         from src.infrastructure.demo_stt_deepgram import DemoSTTDeepgram
         from src.infrastructure.deepgram_tts_client import DeepgramTTSClient
         from src.infrastructure.azure_openai_client import AzureOpenAILLMClient
@@ -101,6 +100,7 @@ async def lifespan(app: FastAPI):
             tts=DeepgramTTSClient(),
             prosody_mapper=TTSProsodyMapper(),
             llm_factory=AzureOpenAILLMClient,
+            deepgram_api_key=os.getenv("DEEPGRAM_API_KEY", ""),
         )
         print("  PROD MODE: Cloud pipeline active (Deepgram STT + Azure OpenAI + Aura TTS)")
 

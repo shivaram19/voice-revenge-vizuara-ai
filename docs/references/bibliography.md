@@ -244,3 +244,180 @@
 *Bibliography compiled: 2026-04-27*
 *Total entries: 89*
 *Coverage: ASR (6), TTS (5), LLM/Agents (4), Streaming (5), Infrastructure (6), Architecture (6), VAD (4), Memory (3), S2S (2), API Design (3), Telephony Compliance (1), Web UX (1), Security (1)*
+
+---
+
+## Sanskrit Philosophy, Poetics & Epistemology
+
+90. **Bharata Muni.** (c. 2nd c. BCE–2nd c. CE). *Nāṭyaśāstra*. Chapter 6: *Rasādhyāya*.
+    - *Foundational text of Indian dramaturgy. The Rasasūtra (6.36): "Vibhāvānubhāva-vyabhicāri-saṃyogād rasa-niṣpattiḥ."*
+
+91. **Abhinavagupta.** (10th–11th c. CE). *Abhinavabhāratī* (commentary on *Nāṭyaśāstra*) and *Locana* (commentary on *Dhvanyāloka*).
+    - *Kashmiri Śaiva philosopher who deepened Rasa theory with the concepts of Sahrdaya, Sādhāraṇīkaraṇa, and universalization.*
+
+92. **Bhartṛhari.** (5th c. CE). *Vākyapadīya*. Kāṇḍa I.
+    - *Foundational text of Sanskrit philosophy of language. Doctrine of Sphoṭa and three levels of speech: paśyantī, madhyamā, vaikharī.*
+
+93. **Ānandavardhana.** (9th c. CE). *Dhvanyāloka*.
+    - *Foundational text of Sanskrit poetics on suggested meaning (dhvani). Commentary by Abhinavagupta (*Locana*).*
+
+94. **Monier-Williams, M.** (1899). *A Sanskrit-English Dictionary*. Clarendon Press, Oxford.
+    - *Canonical Sanskrit-English lexicon. s.v. śruti, saṃvedana, smṛti, hṛdaya, sphoṭa, dhvani.*
+
+95. **Macdonell, A. A.** (1893). *A Sanskrit-English Dictionary*. Longmans, Green & Co.
+    - *Earlier comprehensive Sanskrit lexicon with etymological notes.*
+
+96. **Uskokov, A.** (University of Chicago). *Deciphering the Hidden Meaning: Scripture and the Hermeneutics of Liberation in Early Advaita Vedānta*. PhD dissertation.
+    - *Citing Śabara's Mīmāṃsābhāṣya on Śruti as pramāṇa.*
+
+97. **Van Buitenen, J. A. B.** (1974). *The Mahābhārata: 1. The Book of the Beginning*. University of Chicago Press.
+    - *Cited on the tradition of Śruti, Smṛti, and authoritative transmission.*
+
+98. **Holdrege, B. A.** (1996). *Veda and Torah: Transcending the Textuality of Scripture*. State University of New York Press.
+    - *Comparative study of Vedic and Jewish scripture traditions, including Śruti oral transmission.*
+
+99. **Muller-Ortega, P. E.** (1989). *The Triadic Heart of Siva: Kaula Tantricism of Abhinavagupta in the Non-Dual Shaivism of Kashmir*. SUNY Press.
+    - *Kashmiri Śaiva philosophy of consciousness, Hṛdaya as vibratory center.*
+
+100. **Singh, J.** (1980). *Pratyabhijñāhridayam: The Secret of Self-Recognition*. Motilal Banarsidass.
+    - *Kashmiri Śaiva doctrine of recognition (Pratyabhijñā) and self-reflexive awareness (svasaṃvedana).*
+
+101. **Dyczkowski, M. S. G.** (1987). *The Doctrine of Vibration: An Analysis of the Doctrines and Practices of Kashmir Shaivism*. SUNY Press.
+    - *Analysis of Spanda (vibration) and Saṃvedana as mirror-like consciousness.*
+
+102. **Ingalls, D. H. H., Masson, J. M., & Patwardhan, M. V.** (1990). *The Dhvanyāloka of Ānandavardhana with the Locana of Abhinavagupta*. Harvard University Press.
+    - *Critical edition with translation of foundational Sanskrit poetics texts.*
+
+103. **Iyer, K. A. S.** (1977). *Bhartṛhari: A Study of the Vākyapadīya in the Light of Ancient Commentaries*. Motilal Banarsidass.
+    - *Scholarly study of Bhartṛhari's philosophy of language and Sphoṭa doctrine.*
+
+104. **Alackapally, S.** (2010). "The Sphoṭa of Language and the Experience of Śabdatattva." *Journal of Dharma*, 35(3), 204–213.
+    - *Peer-reviewed analysis of Sphoṭa as linguistic and metaphysical concept.*
+
+105. **Torella, R., et al.** (2017). "Studies on Bhartṛhari and the Pratyabhijñā: The Case of svasaṃvedana." *Religions*, 8(8), 145. MDPI. DOI: 10.3390/rel8080145.
+    - *Peer-reviewed study on self-awareness in Bhartṛhari and Kashmiri Śaivism.*
+
+106. **Kellner, B.** (2010). "Self-Awareness (Svasaṃvedana) in Dignāga's Pramāṇasamuccaya and -Vṛtti: A Close Reading." *Journal of Indian Philosophy*, 38(3), 203–231.
+    - *Peer-reviewed philological analysis of Buddhist epistemology of self-awareness.*
+
+107. **Liao, J.** (2024). "Does Memory Reflect the Function of Smṛti? Exploring the Concept of the Recollecting Mind in the Cheng Weishi Lun." *Religions*, 15(6), 632. DOI: 10.3390/rel15060632.
+    - *Peer-reviewed analysis of Smṛti in Buddhist Yogācāra phenomenology.*
+
+108. **Yao, Z.** (2005). *The Buddhist Theory of Self-Cognition*. Routledge.
+    - *Academic monograph on Buddhist theories of self-awareness and consciousness.*
+
+109. **Buswell, R. E., & Lopez, D. S.** (2014). *The Princeton Dictionary of Buddhism*. Princeton University Press.
+    - *Canonical reference on Buddhist terms: vedanā, smṛti, saṃjñā, karuṇā.*
+
+110. **Patañjali.** *Yoga Sūtra* 1.11. *Anubhūta-viṣaya-asampramoṣaḥ smṛtiḥ*.
+    - *Classical definition: "Memory is the retention of images of objects that have been experienced, without distortion."*
+
+---
+
+## Psychology, Empathy & Auditory Neuroscience
+
+111. **Rogers, C. R.** (1957). "The necessary and sufficient conditions of therapeutic personality change." *Journal of Consulting Psychology*, 21(2), 95–103.
+    - *Foundational paper on therapeutic empathy: congruence, unconditional positive regard, empathic understanding.*
+
+112. **Elliott, R., Bohart, A. C., Watson, J. C., & Murphy, D.** (2018). "Therapist empathy and client outcome: An updated meta-analysis." *Psychotherapy*, 55(4), 399–410.
+    - *Meta-analysis of 82 samples, 6,138 clients. r = .28, d = .58. Client-perceived empathy > objective accuracy.*
+
+113. **Norcross, J. C., & Wampold, B. E.** (2018). "A new therapy for each patient: Evidence-based relationships and responsiveness." *Journal of Clinical Psychology*, 74(11), 1889–1906.
+    - *Large-scale meta-analysis (295 studies) on therapeutic alliance as robust outcome predictor.*
+
+114. **Flückiger, C., Del Re, A. C., Wampold, B. E., & Horvath, A. O.** (2018). "The alliance in adult psychotherapy: A meta-analytic synthesis." *Psychotherapy*, 55(4), 316–340.
+    - *Meta-analytic synthesis confirming alliance as cross-modality outcome predictor.*
+
+115. **Wampold, B. E.** (2015). "How important are the common factors in psychotherapy? An update." *World Psychiatry*, 14(3), 270–277.
+    - *Review: common factors (alliance, empathy, expectations) account for more outcome variance than specific techniques.*
+
+116. **Julia, G. J., Romate, J., Allen, J. G., & Rajkumar, E.** (2024). "Compassionate communication: a scoping review." *Frontiers in Communication*, 8, 1294586.
+    - *Scoping review of 5,862 records, 57 final articles. Seven dimensions of compassionate communication.*
+
+117. **Porges, S. W.** (1995). "Orienting in a defensive world: Mammalian modifications of our evolutionary heritage. A Polyvagal Theory." *Psychophysiology*, 32(4), 301–318.
+    - *Foundational paper on ventral vagal complex and social engagement system.*
+
+118. **Porges, S. W.** (2011). *The Polyvagal Theory: Neurophysiological Foundations of Emotions, Attachment, Communication, and Self-Regulation*. W. W. Norton.
+    - *Definitive monograph on Polyvagal Theory and neurobiology of safety.*
+
+119. **Ooishi, Y., Mukai, H., Watanabe, K., Kawato, S., & Kashino, M.** (2017). "Increase in salivary oxytocin and decrease in salivary cortisol after listening to relaxing slow-tempo and exciting fast-tempo music." *PLOS ONE*, 12(12), e0189075.
+    - *Empirical study: auditory stimuli increase oxytocin, decrease cortisol, correlate with HRV.*
+
+120. **Kumar, S., Joseph, S., Gander, P. E., Barascud, N., Halpern, A. R., & Griffiths, T. D.** (2016). "A brain system for auditory working memory." *The Journal of Neuroscience*, 36(16), 4492–4505.
+    - *fMRI study: auditory cortex, hippocampus, and inferior frontal gyrus form functionally connected working memory network.*
+
+121. **Barascud, N., Pearce, M. T., Griffiths, T. D., Friston, K. J., & Chait, M.** (2016). "Brain responses in humans reveal ideal observer-like sensitivity to complex acoustic patterns." *Proceedings of the National Academy of Sciences*, 113(5), E616–E625.
+    - *PNAS: auditory system operates as ideal observer, predictive not passive.*
+
+122. **Bianco, R., Harrison, P. M. C., Hu, M., Bolger, C., Picken, S., Pearce, M. T., & Chait, M.** (2020). "Long-term implicit memory for sequential auditory patterns in humans." *eLife*, 9, e56073.
+    - *Implicit auditory memories form rapidly and persist for months with resistance to interference.*
+
+123. **Bianco, R., Hall, E. T. R., Pearce, M. T., & Chait, M.** (2023). "Implicit auditory memory in older listeners: From encoding to 6-month retention." *Current Research in Neurobiology*, 5, 100115.
+    - *Aging affects encoding speed but not long-term implicit auditory memory accessibility.*
+
+124. **Strauss, A., Wöstmann, M., & Obleser, J.** (2012). "Adverse listening conditions and memory load drive a common alpha oscillatory network." *The Journal of Neuroscience*, 32(36), 12376–12383.
+    - *MEG: acoustic degradation and memory load compete for common executive control network.*
+
+125. **Yang, J., Tang, X., Lin, S., Jiang, L., Wei, K., Cao, X., Wan, L., Wang, J., Ding, H., & Li, C.** (2023). "Altered auditory processes pattern predicts cognitive decline in older adults." *Frontiers in Aging Neuroscience*, 15, 1230939.
+    - *Auditory MMN amplitude decline as early biomarker of neurodegeneration.*
+
+---
+
+## Learning Science & Myth Debunking
+
+126. **Dale, E.** (1946). *Audio-Visual Methods in Teaching* (rev. 1954, 1969). Dryden Press, New York.
+    - *Primary text: Cone of Experience contains NO percentages or retention claims in any edition.*
+
+127. **Masters, K.** (2013). "Edgar Dale's Pyramid of Learning in medical education: A literature review." *Medical Teacher*, 35(11), e1584–e1593.
+    - *Systematic review: 43 papers uncritically cite Pyramid; no original research found.*
+
+128. **Masters, K.** (2020). "Edgar Dale's Pyramid of Learning in medical education: Further expansion of the myth." *Medical Education*, 54(1), 22–32.
+    - *Follow-up: citations increasing; "The Pyramid is rubbish, the statistics are rubbish."*
+
+129. **Subramony, D. P., Molenda, M., Betrus, A. K., & Thalheimer, W.** (2014). "Mythical Retention Data & The Corrupted Cone." *Educational Technology*.
+    - *Peer-reviewed debunking of the Learning Pyramid myth.*
+
+130. **Thalheimer, W.** (2006). "People remember 10%, 20%... Oh Really?" *Work-Learning Research*. https://www.worklearning.com/2006/05/01/people_remember/
+    - *Industry analysis: no research data supports the retention percentages.*
+
+---
+
+## Cultural Appropriation, AI Ethics & Privacy
+
+131. **ISMIR 2021.** "East Asian Philosophies and the Ethics of Music AI."
+    - *Citing Hantrakul on cultural appropriation in timbre transfer; O'Neil and Gunn's Ethical Matrix.*
+
+132. **King, J., et al.** (Stanford Institute for Human-Centered AI). (2025). "Study exposes privacy risks of AI chatbot conversations." *Stanford News*, October 15.
+    - *Six leading U.S. AI companies feed user inputs into training by default; privacy documentation "often unclear."*
+
+133. **GDPR (EU) 2016/679, Article 17.** "Right to erasure ('right to be forgotten')."
+    - *Legal basis for selective amnesia architecture requirement.*
+
+134. **MIT Sloan & BCG.** (2024). Responsible AI research. Cited in Sopra Steria.
+    - *Companies prioritizing responsible AI experience nearly 30% fewer AI failures.*
+
+135. **Jiang, Z., et al.** (2026). "Hear You in Silence: Designing for Active Listening in Human Interaction with Conversational Agents Using Context-Aware Pacing." *arXiv:2602.06134*.
+    - *Five context-aware pacing strategies for conversational agents: Reflective, Facilitative, Empathic, Holding Space, Immediate.*
+
+136. **Jack, R. E., et al.** (2014). "Facial expression signaling supports the discrimination of four categories." *Current Biology*. University of Glasgow.
+    - *Challenge to Ekman's 6-basic model; suggests only 4 discriminable categories.*
+
+137. **Hejmadi, A., et al.** (2000). Cross-cultural identification of Rasa emotions. Cited in Mukherjee (2021) "Dancing with Nine Colours." *PhilArchive*.
+    - *Behavioral study demonstrating cross-cultural recognition of Rasa emotions.*
+
+138. **Treasure, J.** (2011). "5 ways to listen better." TED Talk.
+    - *RASA framework: Receive, Appreciate, Summarize, Ask.*
+
+139. **Chowkase, A. A.** (2023). "Social and emotional learning for the greater good: Expanding the circle of human concern." *Social and Emotional Learning: Research, Practice, and Policy*, 1, 100003.
+    - *Yale Center for Emotional Intelligence: operationalization of Samvedana as SEL curriculum.*
+
+140. **Yale Center for Emotional Intelligence / Greater Good Science Center, UC Berkeley.** (2025). "What If SEL Were About Making the World a Better Place?" *Greater Good Magazine*.
+    - *Samvedana curriculum: care and concern for others, encompassing humanity and nature.*
+
+---
+
+*Bibliography updated: 2026-04-28*  
+*Previous entries: 89 (2026-04-27)*  
+*New entries: 51 (90–140)*  
+*Total entries: 140*  
+*New coverage: Sanskrit Philosophy (20), Buddhist Phenomenology (6), Psychology/Empathy (15), Auditory Neuroscience (5), Learning Science (5), AI Ethics/Privacy (5)*
