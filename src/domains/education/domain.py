@@ -48,8 +48,8 @@ class EducationDomain(DomainPort):
             ReceptionistConfig tuned for an educational institution.
         """
         return ReceptionistConfig(
-            company_name="EduVoice Academy",
-            hours_text="Monday-Friday 9 AM to 5 PM",
+            company_name="Jaya High School, Suryapet",
+            hours_text="Monday through Saturday, 8:30 AM to 4 PM. Sunday holiday.",
             max_turns=50,
             tool_timeout_seconds=3.0,
             fallback_after_misunderstandings=3,

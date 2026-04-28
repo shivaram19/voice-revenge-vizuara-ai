@@ -41,72 +41,76 @@ class AdmissionRecord:
 
 EDUCATION_FAQ: List[Dict[str, str]] = [
     {
-        "question": "What are the admission deadlines?",
+        "question": "What is the ANN Explorer course?",
         "answer": (
-            "Fall semester applications close on July 15. "
-            "Spring semester applications close on November 30. "
-            "Late applications are reviewed on a space-available basis."
+            "ANN Explorer is our 12-week Artificial Neural Networks program for students in Grade 6 and above. "
+            "Children learn how computers recognise images, understand speech, and make decisions — just like a human brain. "
+            "They build real projects: an emoji recogniser, a simple chatbot, and a music genre classifier. "
+            "No advanced mathematics is required. We use visual coding tools that make AI concepts easy and fun."
         ),
-        "category": "admissions",
+        "category": "courses",
     },
     {
-        "question": "Do you offer scholarships?",
+        "question": "What is the fee for the ANN course, and are there instalments?",
         "answer": (
-            "Yes. Merit scholarships cover up to 50 percent of tuition. "
-            "Need-based aid is available through our financial aid office. "
-            "Applications for scholarships are due by June 1 for the fall intake."
+            "The full ANN Explorer program fee is 24,000 rupees for 12 weeks. "
+            "We offer a 3-month EMI option at no extra cost. "
+            "A sibling discount of 10 percent is available for families enrolling more than one child."
         ),
-        "category": "financial-aid",
+        "category": "fees",
     },
     {
-        "question": "What campus facilities are available?",
+        "question": "When does the next ANN batch start?",
         "answer": (
-            "Our campus features a digital library, science laboratories, "
-            "a 500-seat auditorium, sports complex, and on-campus student housing. "
-            "The innovation hub is open 24 hours for enrolled students."
+            "The next ANN Explorer batch begins on June 2nd, 2026. "
+            "Classes are held on Saturdays and Sundays from 10 AM to 12 noon. "
+            "Each batch has only 12 students to ensure individual attention. "
+            "Four seats are still available for the June batch."
+        ),
+        "category": "courses",
+    },
+    {
+        "question": "Does my child need to know coding before joining ANN?",
+        "answer": (
+            "No prior coding experience is needed. The course starts with drag-and-drop visual tools. "
+            "By the middle of the program, students transition to simple Python, guided step by step. "
+            "Basic computer literacy — using a mouse and keyboard — is sufficient."
+        ),
+        "category": "courses",
+    },
+    {
+        "question": "What other courses do you offer?",
+        "answer": (
+            "We offer Python Programming, Robotics and IoT, Mathematics Excellence, Science Lab Mastery, "
+            "and Spoken English. All programs are designed for school students from Grade 5 to Grade 10."
+        ),
+        "category": "courses",
+    },
+    {
+        "question": "How can I visit the school before enrolling?",
+        "answer": (
+            "You are welcome to visit Jaya High School any weekday between 9 AM and 4 PM. "
+            "We also schedule dedicated campus tours on Saturday mornings. "
+            "Please call ahead so we can arrange a faculty member to meet you."
         ),
         "category": "facilities",
     },
     {
-        "question": "Are online classes available?",
+        "question": "Is there a demo class before I pay?",
         "answer": (
-            "Yes. All core programs offer hybrid or fully online options. "
-            "Live lectures are streamed in real time and recorded for later review."
-        ),
-        "category": "programs",
-    },
-    {
-        "question": "How do I transfer credits from another institution?",
-        "answer": (
-            "Submit official transcripts to the admissions office. "
-            "Transfer credits are evaluated within 10 business days. "
-            "Up to 60 credits may be transferred toward a bachelor's degree."
+            "Yes. We hold a free demo class every Saturday at 11 AM. "
+            "Your child can experience the ANN Explorer session firsthand. "
+            "After the demo, you can decide whether to enrol. There is no obligation."
         ),
         "category": "admissions",
     },
     {
-        "question": "What is the student-to-faculty ratio?",
+        "question": "What certificate will my child receive?",
         "answer": (
-            "Our average student-to-faculty ratio is 12 to 1. "
-            "Small class sizes ensure personalised attention and mentorship."
+            "Upon completion, every student receives a certificate of achievement from Jaya High School. "
+            "Outstanding projects are also featured in our annual science exhibition."
         ),
-        "category": "academics",
-    },
-    {
-        "question": "Is career counselling provided?",
-        "answer": (
-            "Yes. The career centre offers resume reviews, mock interviews, "
-            "and employer networking events. Placement support continues for one year after graduation."
-        ),
-        "category": "student-services",
-    },
-    {
-        "question": "What are the English language requirements?",
-        "answer": (
-            "International applicants must submit IELTS 6.5, TOEFL 80, or equivalent. "
-            "Conditional admission is available with an intensive English pathway program."
-        ),
-        "category": "admissions",
+        "category": "courses",
     },
 ]
 
@@ -117,52 +121,57 @@ EDUCATION_FAQ: List[Dict[str, str]] = [
 
 EDUCATION_COURSES: List[CourseRecord] = [
     CourseRecord(
-        name="Computer Science Bachelor",
+        name="ANN Explorer — Artificial Neural Networks",
         category="technology",
-        duration_months=48,
-        tuition_usd=48000.0,
-        description="Full-stack software engineering, algorithms, and systems design.",
-        prerequisites=["High school mathematics", "Introductory programming"],
+        duration_months=3,
+        tuition_usd=288.0,  # ₹24,000 ≈ $288
+        description=(
+            "12-week after-school program for Grade 6 and above. "
+            "Students build emoji recognisers, simple chatbots, and music classifiers "
+            "using visual neural network tools. No advanced math required. "
+            "Batch size: 12 students. Includes take-home project kit and certificate."
+        ),
+        prerequisites=["Grade 6 or above", "Basic computer literacy"],
     ),
     CourseRecord(
-        name="Data Science Master",
+        name="Python Programming Fundamentals",
         category="technology",
-        duration_months=24,
-        tuition_usd=32000.0,
-        description="Machine learning, statistical modelling, and big-data pipelines.",
-        prerequisites=["Linear algebra", "Probability and statistics"],
+        duration_months=3,
+        tuition_usd=180.0,  # ₹15,000 ≈ $180
+        description="Introduction to Python coding, logic building, and small projects.",
+        prerequisites=["Grade 5 or above"],
     ),
     CourseRecord(
-        name="Business Administration MBA",
-        category="business",
-        duration_months=24,
-        tuition_usd=45000.0,
-        description="Leadership, strategy, finance, and entrepreneurship.",
-        prerequisites=["Bachelor's degree", "Two years work experience"],
+        name="Robotics and IoT Workshop",
+        category="technology",
+        duration_months=2,
+        tuition_usd=144.0,  # ₹12,000 ≈ $144
+        description="Hands-on robotics with Arduino, sensors, and basic automation.",
+        prerequisites=["Grade 7 or above"],
     ),
     CourseRecord(
-        name="Digital Marketing Certificate",
-        category="business",
+        name="Mathematics Excellence Program",
+        category="academics",
         duration_months=6,
-        tuition_usd=4500.0,
-        description="SEO, SEM, social media strategy, and content marketing.",
-        prerequisites=["None"],
+        tuition_usd=120.0,  # ₹10,000 ≈ $120
+        description="Advanced problem solving, Olympiad preparation, and board exam readiness.",
+        prerequisites=["Grade 6 or above"],
     ),
     CourseRecord(
-        name="Graphic Design Diploma",
+        name="Science Lab Mastery",
+        category="academics",
+        duration_months=4,
+        tuition_usd=96.0,  # ₹8,000 ≈ $96
+        description="Practical physics, chemistry, and biology experiments with lab access.",
+        prerequisites=["Grade 8 or above"],
+    ),
+    CourseRecord(
+        name="Spoken English and Communication",
         category="arts",
-        duration_months=18,
-        tuition_usd=18000.0,
-        description="Visual communication, typography, and UX fundamentals.",
-        prerequisites=["Creative portfolio"],
-    ),
-    CourseRecord(
-        name="Nursing Bachelor",
-        category="healthcare",
-        duration_months=48,
-        tuition_usd=52000.0,
-        description="Clinical practice, patient care, and healthcare systems.",
-        prerequisites=["Biology and chemistry", "CPR certification"],
+        duration_months=3,
+        tuition_usd=72.0,  # ₹6,000 ≈ $72
+        description="Public speaking, debate, interview skills, and confident communication.",
+        prerequisites=["Grade 5 or above"],
     ),
 ]
 
