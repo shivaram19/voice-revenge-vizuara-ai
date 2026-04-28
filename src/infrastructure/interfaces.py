@@ -164,6 +164,41 @@ class TransportPort(ABC):
         """Receive audio from client."""
         pass
 
+
+class DomainPort(ABC):
+    """
+    Domain plugin interface.
+    Each vertical domain (Education, Pharma, Construction, Hospitality)
+    implements this port to plug into the voice agent pipeline.
+    
+    Ref: Cockburn 2005 (Hexagonal Architecture) [^42];
+         Martin 2002 (OCP/DIP — open for extension, closed for modification) [^94];
+         Gamma et al. 1994 (Strategy Pattern — interchangeable algorithms) [^95].
+    
+    ADR-009: Domain-Modular Voice Agent Platform.
+    """
+
+    @property
+    @abstractmethod
+    def domain_id(self) -> str:
+        """Unique domain identifier, e.g., 'construction', 'education'."""
+        pass
+
+    @abstractmethod
+    def create_receptionist(self, llm_client, tts_provider=None) -> Any:
+        """
+        Factory: create a domain-specific Receptionist instance.
+        The pipeline injects the LLM client; the domain wires its own
+        tools, prompts, and knowledge base.
+        """
+        pass
+
+    @abstractmethod
+    def get_config(self) -> Any:
+        """Domain-specific ReceptionistConfig."""
+        pass
+
+
 # References
 # [^1]: Radford, A., et al. (2022). Robust Speech Recognition via Large-Scale Weak Supervision. ICML.
 # [^3]: Gandhi, S., et al. (2023). Distil-Whisper: Robust Knowledge Distillation via Large-Scale Pseudo Labelling. arXiv:2311.00430.

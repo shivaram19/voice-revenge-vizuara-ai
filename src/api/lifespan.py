@@ -31,13 +31,32 @@ async def lifespan(app: FastAPI):
     app.state.config = config
     app.state.telephony = TwilioGateway()
 
+    # Domain plugin registry — ADR-009
+    from src.domains.registry import DomainRegistry
+    from src.domains.router import DomainRouter
+    from src.domains.construction import ConstructionDomain
+    from src.domains.education import EducationDomain
+
+    domain_registry = DomainRegistry()
+    domain_registry.register(ConstructionDomain())
+    domain_registry.register(EducationDomain())
+    domain_router = DomainRouter(domain_registry)
+
+    app.state.domain_registry = domain_registry
+    app.state.domain_router = domain_router
+
+    print(f"  Registered domains: {domain_registry.list_domains()}")
+
     if demo_mode:
         from src.infrastructure.demo_pipeline import DemoPipeline
         app.state.demo_pipeline = DemoPipeline()
         print("  DEMO MODE: Local CPU pipeline active (faster-whisper + MockLLM + Piper)")
     else:
         from src.infrastructure.production_pipeline import ProductionPipeline
-        app.state.demo_pipeline = ProductionPipeline()
+        app.state.demo_pipeline = ProductionPipeline(
+            domain_registry=domain_registry,
+            domain_router=domain_router,
+        )
         print("  PROD MODE: Cloud pipeline active (Deepgram STT + Azure OpenAI + Aura TTS)")
 
     print(f"Voice Agent Controller started")
