@@ -79,6 +79,7 @@ class ConstructionDomain(DomainPort):
             emotion_detector=EmotionDetector(),
             prompt_adapter=EmotionPromptAdapter(),
         )
+
         return rec
 
     def get_config(self) -> ReceptionistConfig:

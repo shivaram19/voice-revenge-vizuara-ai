@@ -70,11 +70,20 @@ async def handle_twilio_websocket(websocket: WebSocket, call_sid: str):
                 start = event.get("start", {})
                 stream_sid = event.get("streamSid") or start.get("streamSid")
                 metadata = gateway.parse_start_message(event)
-                print(f"[{session_id}] Call started: {metadata.from_number} → {metadata.to_number} (streamSid={stream_sid})")
+
+                # Extract explicit domain from custom parameters (outbound calls).
+                # Twilio Media Streams passes <Parameter> values in start.customParameters [^43].
+                custom_params = start.get("customParameters", {})
+                explicit_domain = custom_params.get("domain")
+
+                print(f"[{session_id}] Call started: {metadata.from_number} → {metadata.to_number} (streamSid={stream_sid}, domain={explicit_domain or 'auto'})")
 
                 if demo_pipeline:
                     greeting_audio = await demo_pipeline.on_call_start(
-                        session_id, metadata.from_number, metadata.to_number
+                        session_id,
+                        metadata.from_number,
+                        metadata.to_number,
+                        domain_id=explicit_domain,
                     )
                     if greeting_audio and stream_sid:
                         print(f"[{session_id}] Sending greeting audio: {len(greeting_audio)} bytes")

@@ -62,6 +62,7 @@ class TwilioGateway(TelephonyGateway):
             stream_sid=event.get("streamSid"),
             from_number=start.get("from"),
             to_number=start.get("to"),
+            custom_params=start.get("customParameters", {}),
         )
 
     def create_stream_message(self, media_payload: str) -> Dict[str, Any]:

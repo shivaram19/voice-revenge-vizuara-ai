@@ -11,6 +11,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional, List, Dict, Any
+from src.emotion.profile import EmotionWindow
 
 
 # =============================================================================
@@ -31,13 +32,15 @@ class CallSession:
     message_result: Optional[Any] = None
     misunderstanding_count: int = 0
     state: str = "idle"
+    # Emotion state — added for controlled affective computing [^E4][^E5]
+    emotion_window: Any = field(default_factory=lambda: None)  # EmotionWindow injected at runtime
 
 
 @dataclass
 class ReceptionistConfig:
     """Receptionist configuration. Ref: SigArch 2026 [^16]."""
-    company_name: str = "Acme Corporation"
-    hours_text: str = "Monday through Friday, 9 AM to 5 PM."
+    company_name: str = "TreloLabs Voice AI"
+    hours_text: str = "Monday through Friday, 8 AM to 6 PM. Emergency dispatch 24/7."
     max_turns: int = 50
     tool_timeout_seconds: float = 3.0
     fallback_after_misunderstandings: int = 3
@@ -216,7 +219,9 @@ class ReceptionistService(Receptionist):
         return response["content"]
 
     async def _llm_chat_completion(self, messages, tools):
-        raise NotImplementedError("Connect to OpenAI-compatible LLM client")
+        """Delegate to injected LLM client via thread pool. DIP satisfied."""
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, self.llm.chat_completion, messages, tools)
 
     async def _execute_tool(self, session, tool_call):
         name = tool_call["function"]["name"]

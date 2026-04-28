@@ -80,12 +80,14 @@ class EducationDomain(DomainPort):
         registry.register(FeeInquiryTool(courses=db["courses"]))
         registry.register(FAQTool(faqs=db["faqs"]))
 
-        return EducationReceptionist(
+        rec = EducationReceptionist(
             config=config,
             tool_registry=registry,
             llm_client=llm_client,
             tts_provider=tts_provider,
         )
+
+        return rec
 
 
 # References

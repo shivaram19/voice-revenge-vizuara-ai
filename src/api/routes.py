@@ -37,7 +37,7 @@ async def root() -> str:
 @router.post("/twilio/inbound")
 async def twilio_inbound(request: Request) -> Response:
     """
-    Twilio webhook for inbound calls.
+    Twilio webhook for inbound and outbound calls.
     Returns TwiML XML to connect the call to our Media Streams WebSocket.
 
     The WebSocket relay streams 8 kHz μ-law audio in both directions,
@@ -53,12 +53,22 @@ async def twilio_inbound(request: Request) -> Response:
     else:
         ws_url = base_url.replace("http://", "ws://", 1) + "/ws/twilio/inbound"
 
+    # Support explicit domain routing via query parameter for outbound calls.
+    # Outbound calls initiated via REST API may not include caller/callee
+    # metadata in the Media Streams start event, so we pass domain explicitly
+    # as a custom parameter [^43].
+    query = request.query_params
+    domain_param = query.get("domain", "")
+    custom_params = f'<Parameter name="direction" value="inbound"/>'
+    if domain_param:
+        custom_params += f'\n            <Parameter name="domain" value="{domain_param}"/>'
+
     twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Say voice="Polly.Joanna">Thank you for calling TreloLabs Voice AI. Connecting you to our virtual receptionist.</Say>
     <Connect>
         <Stream url="{ws_url}">
-            <Parameter name="direction" value="inbound"/>
+            {custom_params}
         </Stream>
     </Connect>
 </Response>"""

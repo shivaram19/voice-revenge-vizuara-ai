@@ -14,6 +14,9 @@ from typing import Optional, List, Dict, Any
 from src.receptionist.service import Receptionist, CallSession, ReceptionistConfig
 from src.receptionist.tools.base import ToolRegistry, ToolResult
 from src.receptionist.prompts.construction_prompt import build_construction_prompt
+from src.emotion.detector import EmotionDetector
+from src.emotion.state_machine import EmotionStateMachine
+from src.emotion.prompt_adapter import EmotionPromptAdapter
 from src.streaming.sentence_aggregator import SentenceAggregator
 
 
@@ -42,6 +45,8 @@ class ConstructionReceptionist(Receptionist):
         tool_registry: ToolRegistry,
         llm_client,  # Any OpenAI-compatible client
         tts_provider,  # Any TTS provider
+        emotion_detector: EmotionDetector = None,
+        prompt_adapter: EmotionPromptAdapter = None,
     ):
         self.config = config
         self.tools = tool_registry
@@ -49,15 +54,22 @@ class ConstructionReceptionist(Receptionist):
         self.tts = tts_provider
         self.sessions: Dict[str, CallSession] = {}
         self.aggregator = SentenceAggregator()
+        # Emotion pipeline — deterministic, auditable [^E4][^E5]
+        self.emotion_detector = emotion_detector or EmotionDetector()
+        self.prompt_adapter = prompt_adapter or EmotionPromptAdapter()
+        self._emotion_machines: Dict[str, EmotionStateMachine] = {}
 
     async def handle_call_start(self, session_id: str, caller: str, called: str) -> str:
         """Initialize session and return construction-specific greeting."""
+        from src.emotion.profile import EmotionWindow
         session = CallSession(
             session_id=session_id,
             caller_number=caller,
             called_number=called,
+            emotion_window=EmotionWindow(),
         )
         self.sessions[session_id] = session
+        self._emotion_machines[session_id] = EmotionStateMachine()
 
         greeting = (
             f"Thank you for calling {self.config.company_name}. "
@@ -78,13 +90,32 @@ class ConstructionReceptionist(Receptionist):
 
         session.conversation_history.append({"role": "user", "content": transcript})
 
+        # ---- Emotion pipeline [^E4][^E5] ----
+        emotion_profile = self.emotion_detector.detect(transcript)
+        emotion_machine = self._emotion_machines.get(session_id)
+        if emotion_machine:
+            emotion_machine.on_turn(emotion_profile)
+        if session.emotion_window:
+            session.emotion_window.append(emotion_profile)
+
         # Build context with construction-specific prompt
         messages = build_construction_prompt(
             company_name=self.config.company_name,
             hours_text=self.config.hours_text,
             today_date=datetime.utcnow().strftime("%A, %B %d, %Y"),
             conversation_history=session.conversation_history,
+            context={},
         )
+
+        # Inject emotion context into system prompt [^E4][^E8]
+        if emotion_machine and messages:
+            adapted_system = self.prompt_adapter.adapt_prompt(
+                base_system_prompt=messages[0]["content"],
+                detected_tone=emotion_machine.latest_tone,
+                trajectory_name=emotion_machine.trajectory.name,
+                consecutive_negative=emotion_machine.window.consecutive_negative_turns,
+            )
+            messages[0]["content"] = adapted_system
 
         # Get tool schemas from registry (OCP: tools added without code changes)
         tool_schemas = self.tools.schemas()
@@ -129,6 +160,7 @@ class ConstructionReceptionist(Receptionist):
     async def handle_call_end(self, session_id: str) -> CallSession:
         """Finalize session and persist log."""
         session = self.sessions.pop(session_id, None)
+        self._emotion_machines.pop(session_id, None)
         if not session:
             raise ValueError(f"Unknown session: {session_id}")
         session.state = "ended"
@@ -163,8 +195,9 @@ class ConstructionReceptionist(Receptionist):
         return LLMResponse(content=response.get("content"))
 
     async def _llm_chat_completion(self, messages, tools):
-        """Delegate to injected LLM client. DIP satisfied."""
-        raise NotImplementedError("Connect to OpenAI-compatible LLM client")
+        """Delegate to injected LLM client via thread pool. DIP satisfied."""
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, self.llm.chat_completion, messages, tools)
 
 
 # References

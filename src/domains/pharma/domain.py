@@ -80,12 +80,14 @@ class PharmaDomain(DomainPort):
         registry.register(ReportAdverseEventTool(adverse_events=db["adverse_events"]))
         registry.register(FAQTool(faqs=db["faqs"]))
 
-        return PharmaReceptionist(
+        rec = PharmaReceptionist(
             config=config,
             tool_registry=registry,
             llm_client=llm_client,
             tts_provider=tts_provider,
         )
+
+        return rec
 
 
 # References

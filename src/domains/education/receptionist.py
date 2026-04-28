@@ -199,8 +199,9 @@ class EducationReceptionist(Receptionist):
         return LLMResponse(content=response.get("content"))
 
     async def _llm_chat_completion(self, messages, tools):
-        """Delegate to injected LLM client. DIP satisfied."""
-        raise NotImplementedError("Connect to OpenAI-compatible LLM client")
+        """Delegate to injected LLM client via thread pool. DIP satisfied."""
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, self.llm.chat_completion, messages, tools)
 
 
 # References

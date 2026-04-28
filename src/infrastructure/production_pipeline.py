@@ -111,14 +111,33 @@ class ProductionPipeline:
         self._receptionists[domain_id] = receptionist
         return receptionist
 
-    async def on_call_start(self, session_id: str, caller: str, called: str) -> bytes:
-        if called is None:
-            domain_id = self.default_domain
+    async def on_call_start(
+        self,
+        session_id: str,
+        caller: str,
+        called: str,
+        domain_id: Optional[str] = None,
+    ) -> bytes:
+        """
+        Initialize a call session.
+
+        Args:
+            session_id: Unique call/session identifier.
+            caller: Caller phone number (from).
+            called: Called phone number (to).
+            domain_id: Optional explicit domain override (e.g., from TwiML
+                custom parameters for outbound calls). If provided, skips
+                phone-number-based routing [^43].
+        """
+        if domain_id:
+            resolved_id = domain_id
+        elif called is None:
+            resolved_id = self.default_domain
         else:
             domain = self.domain_router.resolve(phone_number=called)
-            domain_id = domain.domain_id if domain is not None else self.default_domain
+            resolved_id = domain.domain_id if domain is not None else self.default_domain
 
-        receptionist = self._get_or_create_receptionist(domain_id)
+        receptionist = self._get_or_create_receptionist(resolved_id)
         self._session_receptionist[session_id] = receptionist
 
         greeting_text = await receptionist.handle_call_start(session_id, caller, called)

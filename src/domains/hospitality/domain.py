@@ -86,12 +86,14 @@ class HospitalityDomain(DomainPort):
         registry.register(ConciergeTool(recommendations=db["recommendations"]))
         registry.register(FAQTool(faqs=db["faqs"]))
 
-        return HospitalityReceptionist(
+        rec = HospitalityReceptionist(
             config=config,
             tool_registry=registry,
             llm_client=llm_client,
             tts_provider=tts_provider,
         )
+
+        return rec
 
 
 # References
