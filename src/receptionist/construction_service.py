@@ -12,6 +12,7 @@ from typing import List, Dict, Any
 
 from src.receptionist.base_receptionist import BaseReceptionist
 from src.receptionist.service import CallSession
+from src.domains.construction.prompts import build_construction_prompt
 
 
 class ConstructionReceptionist(BaseReceptionist):
@@ -33,9 +34,6 @@ class ConstructionReceptionist(BaseReceptionist):
         today_date: str,
         context: Dict[str, Any],
     ) -> List[Dict[str, Any]]:
-        # Lazy import breaks circular dependency:
-        # construction_service.py → construction.prompts → construction.domain → construction_service.py
-        from src.domains.construction.prompts import build_construction_prompt
         return build_construction_prompt(
             company_name=self.config.company_name,
             hours_text=self.config.hours_text,

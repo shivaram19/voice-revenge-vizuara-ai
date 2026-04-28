@@ -27,8 +27,10 @@ import json
 import os
 from typing import Optional, List, Dict, Any
 
+from src.infrastructure.interfaces import LLMPort
 
-class AzureOpenAILLMClient:
+
+class AzureOpenAILLMClient(LLMPort):
     """
     Azure OpenAI client for production voice-agent deployments.
 

@@ -12,7 +12,7 @@ Ref: Cockburn 2005 (Hexagonal Architecture) [^42];
 
 from typing import Any, Optional
 
-from src.infrastructure.interfaces import DomainPort
+from src.infrastructure.interfaces import DomainPort, LLMPort
 from src.receptionist.service import ReceptionistConfig
 from src.receptionist.tools.base import ToolRegistry
 from src.domains.education.receptionist import EducationReceptionist
@@ -57,7 +57,7 @@ class EducationDomain(DomainPort):
 
     def create_receptionist(
         self,
-        llm_client: Any,
+        llm_client: LLMPort,
         tts_provider: Optional[Any] = None,
     ) -> EducationReceptionist:
         """

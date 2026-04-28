@@ -62,6 +62,7 @@ from src.receptionist.tools.base import Tool, ToolResult, ToolRegistry
 from src.receptionist.tools.faq import FAQKnowledgeBase, FAQChunk
 from src.domains.construction.seed import seed_database, CONSTRUCTION_FAQ
 from src.streaming.audio_buffer import AudioBuffer
+from src.infrastructure.interfaces import LLMPort
 
 
 # ---------------------------------------------------------------------------
@@ -115,7 +116,7 @@ class DemoTTS:
 # Mock LLM — deterministic intent router (reused from demo_server.py)
 # ---------------------------------------------------------------------------
 
-class MockLLMClient:
+class MockLLMClient(LLMPort):
     """
     Deterministic LLM simulator for demos.
     Parses intent and returns OpenAI-compatible tool_call responses.
@@ -168,7 +169,7 @@ class MockLLMClient:
                 return c.id
         return all_contractors[0].id if all_contractors else None
 
-    async def chat_completion(self, messages: List[Dict[str, str]], tools: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def chat_completion(self, messages: List[Dict[str, str]], tools: List[Dict[str, Any]]) -> Dict[str, Any]:
         user_msg = ""
         for m in reversed(messages):
             if m.get("role") == "user":
@@ -343,13 +344,20 @@ class DemoPipeline:
     """
     Full-duplex demo pipeline: buffers inbound audio, transcribes,
     runs ReAct loop, synthesizes response, streams outbound audio.
+    DIP: All dependencies injected — no hardcoded concretions [^94][^F2].
     """
 
-    def __init__(self):
-        self.gateway = TwilioGateway()
-        self.stt = DemoSTT(model_size="tiny")
-        self.tts = self._load_tts()
-        self.receptionist = self._build_receptionist()
+    def __init__(
+        self,
+        gateway: Any = None,
+        stt: Any = None,
+        tts: Any = None,
+        receptionist: ConstructionReceptionist = None,
+    ):
+        self.gateway = gateway or TwilioGateway()
+        self.stt = stt or DemoSTT(model_size="tiny")
+        self.tts = tts or self._load_tts()
+        self.receptionist = receptionist or self._build_receptionist()
         self._buffers: Dict[str, AudioBuffer] = {}
         self._processing: set = set()
 
@@ -381,9 +389,14 @@ class DemoPipeline:
             tool_timeout_seconds=5.0,
         )
         llm = MockLLMClient(db)
-        rec = ConstructionReceptionist(config=config, tool_registry=registry, llm_client=llm, tts_provider=None)
-        rec._llm_chat_completion = llm.chat_completion
-        return rec
+        # No monkey-patching: MockLLMClient.chat_completion is now sync,
+        # so BaseReceptionist._llm_chat_completion (run_in_executor) works correctly.
+        return ConstructionReceptionist(
+            config=config,
+            tool_registry=registry,
+            llm_client=llm,
+            tts_provider=None,
+        )
 
     # -------------------------------------------------------------------
     # Public API for WebSocket handler

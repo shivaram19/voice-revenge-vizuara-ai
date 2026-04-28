@@ -11,7 +11,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional, List, Dict, Any
-from src.emotion.profile import EmotionWindow
+from src.emotion.profile import EmotionWindow, EmotionState
 
 
 # =============================================================================
@@ -62,11 +62,12 @@ class Receptionist(ABC):
         pass
 
     @abstractmethod
-    def get_emotion_state(self, session_id: str) -> Optional[Any]:
+    def get_emotion_state(self, session_id: str) -> Optional["EmotionState"]:
         """
         Return emotion state for TTS prosody mapping.
         Return None if emotion pipeline is not active.
         Fixes LSP: supertype defines contract instead of hasattr introspection.
+        Ref: Meyer 1988 (Design by Contract) [^M1].
         """
         pass
 
@@ -134,7 +135,7 @@ class ReceptionistService(Receptionist):
         session.state = "ended"
         return session
 
-    def get_emotion_state(self, session_id: str) -> Optional[Any]:
+    def get_emotion_state(self, session_id: str) -> Optional[EmotionState]:
         """Legacy receptionist has no emotion pipeline."""
         return None
 

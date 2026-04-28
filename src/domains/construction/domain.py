@@ -7,9 +7,9 @@ Ref: Cockburn 2005 (Hexagonal Architecture) [^42];
      Gamma et al. 1994 (Strategy Pattern) [^95].
 """
 
-from typing import Any
+from typing import Any, Optional
 
-from src.infrastructure.interfaces import DomainPort
+from src.infrastructure.interfaces import DomainPort, LLMPort
 from src.receptionist.service import ReceptionistConfig
 from src.receptionist.construction_service import ConstructionReceptionist
 from src.receptionist.models import Database
@@ -39,7 +39,11 @@ class ConstructionDomain(DomainPort):
     def domain_id(self) -> str:
         return "construction"
 
-    def create_receptionist(self, llm_client, tts_provider=None) -> ConstructionReceptionist:
+    def create_receptionist(
+        self,
+        llm_client: LLMPort,
+        tts_provider: Optional[Any] = None,
+    ) -> ConstructionReceptionist:
         """
         Factory: builds a fully-wired ConstructionReceptionist.
         The pipeline injects llm_client; the domain supplies the rest.

@@ -24,6 +24,8 @@ from src.streaming.sentence_aggregator import SentenceAggregator
 from src.emotion.detector import EmotionDetector
 from src.emotion.state_machine import EmotionStateMachine
 from src.emotion.prompt_adapter import EmotionPromptAdapter
+from src.emotion.profile import EmotionState
+from src.infrastructure.interfaces import LLMPort
 
 
 @dataclass
@@ -55,7 +57,7 @@ class BaseReceptionist(Receptionist, ABC):
         self,
         config: ReceptionistConfig,
         tool_registry: ToolRegistry,
-        llm_client: Any,
+        llm_client: LLMPort,
         tts_provider: Any,
         emotion_detector: Optional[EmotionDetector] = None,
         prompt_adapter: Optional[EmotionPromptAdapter] = None,
@@ -199,18 +201,19 @@ class BaseReceptionist(Receptionist, ABC):
         """Retrieve an active session by ID."""
         return self.sessions.get(session_id)
 
-    def get_emotion_state(self, session_id: str) -> Optional[Dict[str, Any]]:
+    def get_emotion_state(self, session_id: str) -> Optional[EmotionState]:
         """
         Return emotion state for TTS prosody mapping.
         Fixes LSP violation: pipeline no longer uses hasattr introspection.
+        Replaces raw dict with typed EmotionState (Primitive Obsession fix) [^F1][^M1].
         """
         machine = self._emotion_machines.get(session_id)
         if machine is None:
             return None
-        return {
-            "latest_target_tone": machine.latest_target_tone,
-            "should_offer_human": machine.should_offer_human,
-        }
+        return EmotionState(
+            latest_target_tone=machine.latest_target_tone,
+            should_offer_human=machine.should_offer_human,
+        )
 
     # ------------------------------------------------------------------
     # Internal helpers

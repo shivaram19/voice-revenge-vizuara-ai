@@ -58,7 +58,6 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from typing import Callable, Any
 
 from src.telephony.gateway import TelephonyGateway
-from src.telephony.twilio_gateway import TwilioGateway
 from src.telephony._audio_compat import ratecv, lin2ulaw
 from src.receptionist.service import Receptionist, CallSession
 
@@ -67,10 +66,6 @@ from src.domains.router import DomainRouter
 from src.infrastructure.interfaces import DomainPort
 
 from src.streaming.audio_buffer import AudioBuffer
-from src.infrastructure.azure_openai_client import AzureOpenAILLMClient
-from src.infrastructure.deepgram_tts_client import DeepgramTTSClient
-from src.infrastructure.demo_stt_deepgram import DemoSTTDeepgram
-from src.emotion.tts_prosody import TTSProsodyMapper
 
 
 # ---------------------------------------------------------------------------
@@ -87,19 +82,20 @@ class ProductionPipeline:
         self,
         domain_registry: DomainRegistry,
         domain_router: DomainRouter,
-        gateway: TelephonyGateway = None,
-        stt: Any = None,
-        tts: Any = None,
-        prosody_mapper: Any = None,
-        llm_factory: Callable = None,
+        gateway: TelephonyGateway,
+        stt: Any,
+        tts: Any,
+        prosody_mapper: Any,
+        llm_factory: Callable,
         default_domain: str = "construction",
     ):
-        # DIP: dependencies are injected, not hardcoded [^42][^94]
-        self.gateway = gateway or TwilioGateway()
-        self.stt = stt or DemoSTTDeepgram(language="en-IN")
-        self.tts = tts or DeepgramTTSClient()
-        self.prosody_mapper = prosody_mapper or TTSProsodyMapper()  # [^E12][^E14]
-        self.llm_factory = llm_factory or AzureOpenAILLMClient
+        # DIP: ALL dependencies injected from composition root (lifespan.py) [^F2].
+        # No concrete defaults inside the class — Martin 2002 [^94].
+        self.gateway = gateway
+        self.stt = stt
+        self.tts = tts
+        self.prosody_mapper = prosody_mapper  # [^E12][^E14]
+        self.llm_factory = llm_factory
         self.domain_registry = domain_registry
         self.domain_router = domain_router
         self.default_domain = default_domain
@@ -215,9 +211,9 @@ class ProductionPipeline:
             emotion_tone = None
             emotion_state = receptionist.get_emotion_state(session_id)
             if emotion_state:
-                emotion_tone = emotion_state.get("latest_target_tone")
+                emotion_tone = emotion_state.latest_target_tone
                 # Check escalation — offer human handoff if needed [^E9]
-                if emotion_state.get("should_offer_human"):
+                if emotion_state.should_offer_human:
                     response_text += " Would you like me to connect you with a human representative?"
 
             response_audio = await loop.run_in_executor(

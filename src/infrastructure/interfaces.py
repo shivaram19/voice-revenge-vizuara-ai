@@ -4,9 +4,11 @@ Hexagonal architecture: domain logic depends on interfaces, not implementations.
 Ref: Cockburn 2005, "Hexagonal Architecture".
 """
 
-from abc import ABC, abstractmethod
+from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import AsyncIterator, Optional, List, Dict, Any
+from abc import ABC, abstractmethod
 import numpy as np
 
 @dataclass
@@ -178,11 +180,16 @@ class DomainPort(ABC):
         pass
 
     @abstractmethod
-    def create_receptionist(self, llm_client, tts_provider=None) -> Any:
+    def create_receptionist(
+        self,
+        llm_client: LLMPort,
+        tts_provider: Optional[Any] = None,
+    ) -> "Receptionist":
         """
         Factory: create a domain-specific Receptionist instance.
         The pipeline injects the LLM client; the domain wires its own
         tools, prompts, and knowledge base.
+        Meyer 1988 (Design by Contract): typed return value, not Any [^M1].
         """
         pass
 
