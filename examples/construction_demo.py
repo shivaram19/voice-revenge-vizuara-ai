@@ -9,7 +9,7 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.receptionist.models import Database
-from src.receptionist.construction_seed import seed_database, CONSTRUCTION_FAQ
+from src.domains.construction.seed import seed_database, CONSTRUCTION_FAQ
 from src.receptionist.tools.faq import FAQKnowledgeBase, FAQChunk
 from src.receptionist.tools.contractor_tools import ContractorDirectory, OutboundCallManager
 from src.receptionist.scheduler import SchedulingEngine

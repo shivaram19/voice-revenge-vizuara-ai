@@ -5,7 +5,7 @@ Ref: Twilio (2024). Media Streams API [^43].
 """
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Dict, Any, Optional, Callable
 
 
@@ -16,7 +16,7 @@ class CallMetadata:
     stream_sid: Optional[str]
     from_number: str
     to_number: str
-    custom_params: Dict[str, Any] = None
+    custom_params: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass

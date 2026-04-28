@@ -65,12 +65,8 @@ class STTPort(ABC):
     """
     Automatic Speech Recognition port.
     Ref: Radford et al. 2022; Gandhi et al. 2023.
+    ISP: Only the methods actually used by the pipeline are required.
     """
-    
-    @abstractmethod
-    async def stream_audio(self, audio: AsyncIterator[AudioChunk]) -> AsyncIterator[TranscriptEvent]:
-        """Stream audio in, transcript events out."""
-        pass
     
     @abstractmethod
     async def transcribe_file(self, audio_path: str) -> TranscriptEvent:
@@ -97,22 +93,24 @@ class LLMPort(ABC):
     """
     Large Language Model port.
     Ref: Yao et al. 2023 (ReAct); OpenAI Function Calling.
+    ISP: Only the methods actually used by the pipeline are required.
     """
     
     @abstractmethod
-    async def generate_stream(
-        self, 
+    def chat_completion(
+        self,
         messages: List[Dict[str, str]],
         tools: Optional[List[Dict[str, Any]]] = None,
-        temperature: float = 0.7
-    ) -> AsyncIterator[LLMToken]:
-        """Stream tokens with optional tool calling."""
+        temperature: float = 0.7,
+    ) -> Dict[str, Any]:
+        """Synchronous chat completion with optional tool calling."""
         pass
 
 class MemoryPort(ABC):
     """
     Memory & retrieval port.
     Ref: Qiu et al. 2026 (VoiceAgentRAG); Lewis et al. 2020 (RAG).
+    ISP: Only the methods actually used by the pipeline are required.
     """
     
     @abstractmethod
@@ -123,11 +121,6 @@ class MemoryPort(ABC):
     @abstractmethod
     async def store_turn(self, session_id: str, role: str, content: str) -> None:
         """Persist turn to long-term memory."""
-        pass
-    
-    @abstractmethod
-    async def prefetch(self, session_id: str, predicted_topics: List[str]) -> None:
-        """Background prefetch for Slow Thinker."""
         pass
 
 class VADPort(ABC):

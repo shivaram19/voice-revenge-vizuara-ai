@@ -55,6 +55,9 @@ from typing import Optional, Dict, Any
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from typing import Callable, Any
+
+from src.telephony.gateway import TelephonyGateway
 from src.telephony.twilio_gateway import TwilioGateway
 from src.telephony._audio_compat import ratecv, lin2ulaw
 from src.receptionist.service import Receptionist, CallSession
@@ -63,7 +66,7 @@ from src.domains.registry import DomainRegistry
 from src.domains.router import DomainRouter
 from src.infrastructure.interfaces import DomainPort
 
-from src.infrastructure.demo_pipeline import AudioBuffer
+from src.streaming.audio_buffer import AudioBuffer
 from src.infrastructure.azure_openai_client import AzureOpenAILLMClient
 from src.infrastructure.deepgram_tts_client import DeepgramTTSClient
 from src.infrastructure.demo_stt_deepgram import DemoSTTDeepgram
@@ -84,12 +87,19 @@ class ProductionPipeline:
         self,
         domain_registry: DomainRegistry,
         domain_router: DomainRouter,
+        gateway: TelephonyGateway = None,
+        stt: Any = None,
+        tts: Any = None,
+        prosody_mapper: Any = None,
+        llm_factory: Callable = None,
         default_domain: str = "construction",
     ):
-        self.gateway = TwilioGateway()
-        self.stt = DemoSTTDeepgram(language="en-IN")
-        self.tts = DeepgramTTSClient()
-        self.prosody_mapper = TTSProsodyMapper()  # [^E12][^E14]: emotion-to-voice mapping
+        # DIP: dependencies are injected, not hardcoded [^42][^94]
+        self.gateway = gateway or TwilioGateway()
+        self.stt = stt or DemoSTTDeepgram(language="en-IN")
+        self.tts = tts or DeepgramTTSClient()
+        self.prosody_mapper = prosody_mapper or TTSProsodyMapper()  # [^E12][^E14]
+        self.llm_factory = llm_factory or AzureOpenAILLMClient
         self.domain_registry = domain_registry
         self.domain_router = domain_router
         self.default_domain = default_domain
@@ -106,7 +116,7 @@ class ProductionPipeline:
         if domain is None:
             raise ValueError(f"Unknown domain: {domain_id}")
 
-        llm = AzureOpenAILLMClient()
+        llm = self.llm_factory()
         receptionist = domain.create_receptionist(llm_client=llm, tts_provider=None)
         self._receptionists[domain_id] = receptionist
         return receptionist
@@ -203,12 +213,11 @@ class ProductionPipeline:
             # Extract latest emotion tone for TTS prosody mapping [^E12][^E14]
             from src.emotion.profile import EmotionalTone
             emotion_tone = None
-            rec = receptionist
-            machine = rec._emotion_machines.get(session_id) if hasattr(rec, '_emotion_machines') else None
-            if machine and machine.latest_target_tone:
-                emotion_tone = machine.latest_target_tone
+            emotion_state = receptionist.get_emotion_state(session_id)
+            if emotion_state:
+                emotion_tone = emotion_state.get("latest_target_tone")
                 # Check escalation — offer human handoff if needed [^E9]
-                if machine.should_offer_human:
+                if emotion_state.get("should_offer_human"):
                     response_text += " Would you like me to connect you with a human representative?"
 
             response_audio = await loop.run_in_executor(

@@ -54,9 +54,14 @@ class DeepgramTTSClient:
         if not self.api_key:
             raise ValueError("Deepgram API key required. Set DEEPGRAM_API_KEY.")
 
-    def synthesize(self, text: str) -> bytes:
+    def synthesize(self, text: str, model: str = None) -> bytes:
         """
         Synthesize text to speech.
+
+        Args:
+            text: Text to synthesize.
+            model: Optional voice model override (e.g., "aura-2-harmonia-en")
+                   for emotion-mapped voice selection [^E12].
 
         Returns raw audio bytes (16-bit PCM at self.sample_rate).
         """
@@ -66,7 +71,7 @@ class DeepgramTTSClient:
         }
 
         params = {
-            "model": self.model,
+            "model": model or self.model,  # [^E12]: per-call emotion voice override
             "encoding": self.encoding,
             "sample_rate": self.sample_rate,
         }

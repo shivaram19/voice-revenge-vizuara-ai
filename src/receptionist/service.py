@@ -61,6 +61,15 @@ class Receptionist(ABC):
     async def handle_call_end(self, session_id: str) -> CallSession:
         pass
 
+    @abstractmethod
+    def get_emotion_state(self, session_id: str) -> Optional[Any]:
+        """
+        Return emotion state for TTS prosody mapping.
+        Return None if emotion pipeline is not active.
+        Fixes LSP: supertype defines contract instead of hasattr introspection.
+        """
+        pass
+
 
 # =============================================================================
 # Legacy Concrete Implementation (backward compatible)
@@ -124,6 +133,10 @@ class ReceptionistService(Receptionist):
             raise ValueError(f"Unknown session: {session_id}")
         session.state = "ended"
         return session
+
+    def get_emotion_state(self, session_id: str) -> Optional[Any]:
+        """Legacy receptionist has no emotion pipeline."""
+        return None
 
     def _build_tool_definitions(self) -> List[Dict[str, Any]]:
         return [

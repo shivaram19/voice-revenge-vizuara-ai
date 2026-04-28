@@ -1,15 +1,50 @@
 """
 FastAPI Lifespan — Startup / Shutdown Hooks
 SRP: ONLY manages application lifecycle. No routing, no business logic.
-Ref: FastAPI docs; ADR-005.
+OCP: Domains are auto-discovered; new verticals require zero changes here.
+Ref: FastAPI docs; ADR-005; ADR-009.
 """
 
 import os
+import pkgutil
+import importlib
 from contextlib import asynccontextmanager
+from typing import List
 from fastapi import FastAPI
 
 from src.infrastructure.azure_config import AzureConfig
 from src.telephony.twilio_gateway import TwilioGateway
+from src.infrastructure.interfaces import DomainPort
+from src.domains.registry import DomainRegistry
+from src.domains.router import DomainRouter
+
+
+def _discover_domains() -> List[DomainPort]:
+    """
+    Auto-discover DomainPort implementations in src/domains/.
+    OCP: Adding a new domain = new folder in src/domains/ — zero core changes.
+    Ref: Martin 2002 (OCP) [^94]; Fowler 2018 (Convention over Configuration) [^F1].
+    """
+    discovered: List[DomainPort] = []
+    domains_pkg = importlib.import_module("src.domains")
+    for _, name, ispkg in pkgutil.iter_modules(domains_pkg.__path__):
+        # Skip infrastructure modules (registry, router)
+        if not ispkg or name in ("registry", "router"):
+            continue
+        try:
+            module = importlib.import_module(f"src.domains.{name}")
+            for attr_name in dir(module):
+                attr = getattr(module, attr_name)
+                if (
+                    isinstance(attr, type)
+                    and issubclass(attr, DomainPort)
+                    and attr is not DomainPort
+                    and not getattr(attr, "__abstractmethods__", None)
+                ):
+                    discovered.append(attr())
+        except Exception as e:
+            print(f"  [WARN] Could not load domain '{name}': {e}")
+    return discovered
 
 
 @asynccontextmanager
@@ -19,9 +54,6 @@ async def lifespan(app: FastAPI):
     config = AzureConfig.from_env()
     missing = config.validate()
 
-    # Demo mode: allow missing Azure OpenAI / Redis if only Twilio is present.
-    # This supports sales demos where the full AI pipeline is not yet wired.
-    # Ref: ADR-005 notes fallback to message-taking when LLM is unavailable.
     demo_mode = os.getenv("DEMO_MODE", "false").lower() == "true"
     if missing and not demo_mode:
         raise RuntimeError(f"Missing required config: {', '.join(missing)}")
@@ -32,18 +64,11 @@ async def lifespan(app: FastAPI):
     app.state.telephony = TwilioGateway()
 
     # Domain plugin registry — ADR-009
-    from src.domains.registry import DomainRegistry
-    from src.domains.router import DomainRouter
-    from src.domains.construction import ConstructionDomain
-    from src.domains.education import EducationDomain
-    from src.domains.pharma import PharmaDomain
-    from src.domains.hospitality import HospitalityDomain
-
+    # OCP: auto-discover domains instead of hardcoding imports [^94]
     domain_registry = DomainRegistry()
-    domain_registry.register(ConstructionDomain())
-    domain_registry.register(EducationDomain())
-    domain_registry.register(PharmaDomain())
-    domain_registry.register(HospitalityDomain())
+    for domain in _discover_domains():
+        domain_registry.register(domain)
+
     domain_router = DomainRouter(domain_registry)
 
     app.state.domain_registry = domain_registry
