@@ -193,7 +193,7 @@ class ProductionPipeline:
         # Generate greeting
         with self.latency.measure("greeting"):
             greeting_text = await receptionist.handle_call_start(session_id, caller, called)
-            greeting_audio = self._synthesize_to_ulaw(greeting_text, emotion_tone=None)
+            greeting_audio = await self._synthesize_to_ulaw(greeting_text, emotion_tone=None)
 
         if send_callback:
             self._is_speaking[session_id] = True
@@ -398,7 +398,7 @@ class ProductionPipeline:
                     situation = SpeechSituation.INTERRUPTED
                     self._was_interrupted[session_id] = False
 
-                response_audio = self._synthesize_to_ulaw(
+                response_audio = await self._synthesize_to_ulaw(
                     response_text, emotion_tone, situation
                 )
                 tts_latency_ms = (time.time() - t1) * 1000
@@ -498,10 +498,14 @@ class ProductionPipeline:
 
         return SpeechSituation.DEFAULT
 
-    def _synthesize_to_ulaw(
+    async def _synthesize_to_ulaw(
         self, text: str, emotion_tone=None, situation: SpeechSituation = None
     ) -> bytes:
-        """Synthesize text with emotion-mapped prosody and situational SSML."""
+        """Synthesize text with emotion-mapped prosody and situational SSML.
+        Runs blocking TTS HTTP call in a thread pool to prevent event loop
+        blocking [^AS1]. Twilio Media Streams requires the event loop to
+        remain responsive for incoming audio chunks [^43].
+        """
         from src.emotion.profile import EmotionalTone
         target = emotion_tone or EmotionalTone.CALM
         sit = situation or SpeechSituation.DEFAULT
@@ -511,7 +515,10 @@ class ProductionPipeline:
         )
         # Store for telemetry
         self._last_voice = voice_model
-        pcm_24k = self.tts.synthesize(adapted_text, model=voice_model, ssml=use_ssml)
+        # Run blocking HTTP call in thread pool — critical for asyncio [^AS1]
+        pcm_24k = await asyncio.to_thread(
+            self.tts.synthesize, adapted_text, model=voice_model, ssml=use_ssml
+        )
 
         wav_buffer = io.BytesIO(pcm_24k)
         with wave.open(wav_buffer, "rb") as w:
@@ -548,4 +555,6 @@ class ProductionPipeline:
 # [^31]: TeamDay AI. (2026). Voice AI Architecture Guide.
 # [^42]: Cockburn, A. (2005). Hexagonal Architecture.
 # [^94]: Martin, R. C. (2002). Agile Software Development.
+# [^AS1]: Python asyncio docs. (2024). Running blocking code in executor threads.
+#          https://docs.python.org/3/library/asyncio-eventloop.html#executing-code-in-thread-or-process-pools
 # [^BI1]: AVA-AI / Hamming AI. (2026). Barge-in configuration: protection, cooldown, chunking.

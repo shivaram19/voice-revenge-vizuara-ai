@@ -55,17 +55,20 @@ except ImportError:
     sys.exit(1)
 
 
-def build_twiml(websocket_url: str, base_url: str) -> str:
+def build_twiml(websocket_url: str, base_url: str, call_sid: str = "CAtest") -> str:
     """
     Build TwiML that connects the outbound leg to our Media Streams
     WebSocket. Twilio streams 8 kHz μ-law audio in both directions [^43].
+    Uses the actual CallSid in the WebSocket URL for proper session isolation.
     """
+    # Replace placeholder with actual CallSid for session isolation
+    actual_url = websocket_url.replace("CAtest", call_sid) if "CAtest" in websocket_url else websocket_url
     twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Say voice="Polly.Joanna">This call is recorded for quality. Connecting you to the A I receptionist now.</Say>
     <Pause length="1"/>
     <Connect>
-        <Stream url="{websocket_url}">
+        <Stream url="{actual_url}">
             <Parameter name="direction" value="outbound"/>
             <Parameter name="demo" value="true"/>
         </Stream>
@@ -146,7 +149,8 @@ def main() -> int:
     </Say>
 </Response>"""
     else:
-        twiml = build_twiml(websocket_url, base_url)
+        # Placeholder twiml — actual CallSid will be inserted after call creation
+        twiml = build_twiml(websocket_url, base_url, call_sid="CAtest")
 
     print("=" * 60)
     print("OUTBOUND DEMO CALL")
@@ -156,9 +160,6 @@ def main() -> int:
     print(f"Record:   {'YES (dual-channel)' if not args.no_record else 'NO'}")
     print(f"Base URL: {base_url or 'N/A'}")
     print(f"Time:     {datetime.utcnow().isoformat()}Z")
-    print()
-    print("TwiML:")
-    print(twiml)
     print()
 
     try:
@@ -170,6 +171,17 @@ def main() -> int:
             recording_status_callback=recording_callback,
             status_callback=status_callback,
         )
+        # Rebuild TwiML with actual CallSid for proper session isolation
+        if websocket_url and "CAtest" in websocket_url:
+            twiml = build_twiml(websocket_url, base_url, call_sid=call_sid)
+            # Update the call with corrected TwiML
+            client = Client(account_sid, auth_token)
+            client.calls(call_sid).update(twiml=twiml)
+            print("[INFO] Updated TwiML with actual CallSid")
+
+        print("TwiML:")
+        print(twiml)
+        print()
         print(f"[OK] Call created: {call_sid}")
         print(f"     Track at: https://console.twilio.com/us1/monitor/logs/calls?frameUrl=%2Fconsole%2Fvoice%2Fcalls%2Flogs%2F{call_sid}")
         print()

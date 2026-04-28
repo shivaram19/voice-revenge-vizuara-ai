@@ -93,7 +93,7 @@ def init_telemetry(service_name: str = "voice-agent-api") -> Dict[str, Any]:
         enable_live_metrics=True,
         disable_offline_storage=False,
         sampling_ratio=1.0,
-        instrumentations=["fastapi", "urllib3", "requests"],
+        instrumentations=["urllib3", "requests"],
     )
 
     _tracer = trace.get_tracer(service_name)

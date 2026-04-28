@@ -83,6 +83,23 @@ async def twilio_inbound(request: Request) -> Response:
     return PlainTextResponse(content=twiml, media_type="application/xml")
 
 
+@router.post("/twilio/status")
+async def twilio_status(request: Request) -> dict:
+    """
+    Twilio call status callback.
+    Twilio POSTs here at each status transition (initiated, ringing, answered, completed).
+    Returns 200 OK to prevent Twilio warning notifications (ErrorCode 15003) [^43].
+    """
+    body_bytes = await request.body()
+    form = {k: v[0] if len(v) == 1 else v for k, v in parse_qs(body_bytes.decode("utf-8", errors="replace")).items()}
+    call_sid = form.get("CallSid", "unknown")
+    call_status = form.get("CallStatus", "unknown")
+    from src.infrastructure.logging_config import get_logger
+    logger = get_logger("api.routes")
+    logger.info("twilio_status_callback", call_sid=call_sid, status=call_status)
+    return {"status": "received", "call_sid": call_sid, "call_status": call_status}
+
+
 @router.post("/twilio/recording")
 async def twilio_recording(request: Request) -> dict:
     """

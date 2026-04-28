@@ -88,18 +88,21 @@ async def handle_twilio_websocket(websocket: WebSocket, call_sid: str):
                 if event_type == "start":
                     start = event.get("start", {})
                     stream_sid = event.get("streamSid") or start.get("streamSid")
+                    actual_call_sid = start.get("callSid", session_id)
                     metadata = gateway.parse_start_message(event)
 
                     custom_params = start.get("customParameters", {})
                     explicit_domain = custom_params.get("domain")
 
                     logger.info(
-                        "call_started",
+                        "media_stream_started",
                         session_id=session_id,
+                        actual_call_sid=actual_call_sid,
+                        stream_sid=stream_sid,
                         from_number=metadata.from_number,
                         to_number=metadata.to_number,
-                        stream_sid=stream_sid,
                         domain=explicit_domain or "auto",
+                        custom_params=custom_params,
                     )
                     log_call_start(
                         session_id,
