@@ -59,9 +59,9 @@ This corrects an earlier (over-eager) design where intent_satisfied automaticall
 3. Pivot/news_offer fire ONLY if the parent's most-recent utterance contains an explicit invitation phrase ("anything else", "by the way", "tell me more", …) or a substantive question (≥4 words containing a question mark).
 4. Wrap-up phrases ("bye", "that's all", "no thanks") *always* override invitation detection — even alongside a question mark, treat as wrap-up.
 
-This is a research-backed default per Cohen 2004 §11.2: "Voice agents that proactively extend conversations past the caller's signalled stopping point are perceived as pushy in 73% of post-call surveys; the same offer at the same point with caller invitation produces 41% engagement and is perceived as helpful."
+**Research basis (qualitative, not numeric).** Cohen, Giangola & Balogh (2004) [^Cohen2004] argue throughout *Voice User Interface Design* that voice systems should defer to caller-initiated continuation rather than push proactive expansion of scope; their general principle is that proactive cross-asks past the caller's signalled stopping point degrade perceived helpfulness, while the same offer with caller invitation is welcomed. The book does not (to our reading) provide a single quantified percentage for this effect; the principle is qualitative and we treat it as such. **[CITATION NEEDED]** for any deployment-grade quantification — to be derived empirically from our own call telemetry once we have ≥200 calls of post-intent transition data.
 
-The detection is implemented as `_is_lingering_signal(caller_text)` — a small classifier with explicit invitation-phrase list, explicit wrap-up phrase list, and a question-mark + word-count fallback. Substring-based for now; a future refinement could use the LLM itself for nuanced cases (DFS-008 §7).
+The detection is implemented as `_is_lingering_signal(caller_text)` — a small classifier with explicit invitation-phrase list, explicit wrap-up phrase list, and a question-mark + word-count fallback. Substring-based for now; a future refinement could use the LLM itself for nuanced cases (DFS-008 §8).
 
 ---
 
@@ -143,13 +143,13 @@ class SchoolEvent:
 
 ## 6. Why this is research-driven, not arbitrary
 
-| Design choice | Source |
+| Design choice | Source (qualitative principle) |
 |---|---|
-| One question per turn | Cohen et al. (2004), *Voice User Interface Design.* Ch. 7 — "two-questions-per-turn produces 60% information loss in callers >40y". |
-| Success signals as conversation-completion markers | Allen & Core (1997), *Draft of DAMSL: Dialog Act Markup in Several Layers.* |
-| Sensitive scenarios opt out of pivot/news | Friedman & Hendry (2019), *Value Sensitive Design.* "Avoid layering asks during morally-charged interactions". |
-| News offer separated from intent pivot | Cohen et al. (2004) §11.4 — "broad off-ramps reduce caller frustration in 78% of cases vs. abrupt close". |
-| Per-class audience filtering | Standard tiered-comms pattern from K-12 educational outreach research [^USDOE2018]. |
+| One question per turn | Cohen, Giangola & Balogh (2004) *Voice User Interface Design* — VUI design literature consistently advises against stacking questions in a single agent turn; callers retain only the most recent. **[CITATION NEEDED]** for the precise % retention figure (we deliberately do NOT cite an invented percentage here). |
+| Success signals as conversation-completion markers | Allen & Core (1997) *Draft of DAMSL.* — formal taxonomy of dialog acts including conversation-completion markers. |
+| Sensitive scenarios opt out of pivot/news | Friedman & Hendry (2019) *Value Sensitive Design.* — design principle: avoid layering additional asks during morally-charged interactions. (Specific quote not provided; principle is captured throughout the book's methodology.) |
+| News offer separated from intent pivot | Cohen et al. (2004), general off-ramp principle. **[CITATION NEEDED]** for empirical quantification — to be derived from our own telemetry. |
+| Per-class audience filtering | Standard tiered-comms pattern in K-12 educational outreach. **[CITATION NEEDED]** for a specific peer-reviewed source — current support is operational practice, not (yet) cited research. |
 
 ---
 
@@ -181,7 +181,22 @@ class SchoolEvent:
 
 ## References
 
-[^Cohen2004]: Cohen, M. H., Giangola, J. P., & Balogh, J. (2004). *Voice User Interface Design.* Addison-Wesley. Ch. 7 (Question structure), §11.4 (Off-ramps).
-[^USDOE2018]: U.S. Department of Education. (2018). *Family Engagement: A Practitioner's Guide.* Section: tiered-communications model for K-12 schools.
-[^Allen1997]: Allen, J., & Core, M. (1997). *Draft of DAMSL: Dialog Act Markup in Several Layers.* University of Rochester. — formal taxonomy of conversation-completion markers.
-[^Friedman2019]: Friedman, B., & Hendry, D. G. (2019). *Value Sensitive Design: Shaping Technology with Moral Imagination.* MIT Press. — opt-out invariants for morally-charged interactions.
+> **Citation honesty note (2026-04-30).** An earlier draft of this DFS attributed
+> specific numeric statistics ("60% information loss", "73% perceived as pushy",
+> "78% off-ramp acceptance") to Cohen 2004. Those percentages were fabricated —
+> the principles cited *are* in the book, but the precise quantifications are
+> not (or at least we cannot verify them in the cited chapters). The fabricated
+> statistics have been removed; remaining claims are qualitative, with
+> [CITATION NEEDED] markers where empirical quantification is missing.
+> The Research-First Covenant (`AGENTS.md`) treats unverifiable claims as
+> hypotheses; this DFS now reflects that.
+
+### Peer-reviewed / canonical sources
+
+[^Cohen2004]: Cohen, M. H., Giangola, J. P., & Balogh, J. (2004). *Voice User Interface Design.* Addison-Wesley. Real book (ISBN 0-321-18576-5); cited for qualitative VUI design principles only — specific numerical claims in this DFS that lack a concrete page/quote are marked [CITATION NEEDED].
+[^Allen1997]: Allen, J., & Core, M. (1997). *Draft of DAMSL: Dialog Act Markup in Several Layers.* University of Rochester / Department of Computer Science.
+[^Friedman2019]: Friedman, B., & Hendry, D. G. (2019). *Value Sensitive Design: Shaping Technology with Moral Imagination.* MIT Press.
+
+### Unverified — TO BE CONFIRMED
+
+[^USDOE2018]: U.S. Department of Education — Family Engagement guidance. **[CITATION NEEDED]** for a specific document/year; the broad framework exists but the precise publication referenced needs to be confirmed before promoting to a primary citation.

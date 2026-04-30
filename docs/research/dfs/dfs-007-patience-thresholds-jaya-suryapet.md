@@ -175,20 +175,45 @@ A static budget assumes a homogeneous audience. Our DFS-007 audience is not homo
 
 ## References
 
-[^IndiaCensus2011]: Office of the Registrar General, India. (2011). *District Census Handbook — Suryapet.* census2011.co.in
-[^TelanganaGov2024]: Government of Telangana, Suryapet District Education Department. (2024). *District Education Statistics, 2020-21.* suryapet.telangana.gov.in/education/
-[^ICBSE2026]: Indian CBSE Schools Directory. (2026). *Jaya HS Suryapeta Secondary School.* icbse.com/schools/jaya-hs-suryapeta-1ly5d4
-[^Yates1973]: Yates, J. (1973). The role of speech pause in second-language production. *Language and Speech*, 16(4), 305–316.
-[^Crystal2003]: Crystal, D. (2003). *English as a Global Language* (2nd ed.). Cambridge University Press. — pause and code-switching analysis in L2 speakers.
+> **Citation honesty note (2026-04-30).** Categorising sources by evidentiary
+> grade per `AGENTS.md` ("Do NOT use unverified blog posts as primary
+> citations"). The thresholds below are derived from real-and-verified
+> primary sources for the conversational-pause and turn-taking primitives
+> (Yngve 1970, Stivers 2009, Heldner & Edlund 2010, Pickering & Garrod 2004,
+> Giles & Coupland 1991); industry references (vendor blogs) provide the
+> *current SaaS-default* baselines we are deliberately deviating from, NOT
+> normative evidence; secondary sources cover demographic context. Some
+> citations are still marked [CITATION NEEDED] until verified.
+
+### Tier 1 — Peer-reviewed / canonical (evidentiary)
+
 [^Stivers2009]: Stivers, T., et al. (2009). Universals and cultural variation in turn-taking in conversation. *PNAS*, 106(26), 10587–10592.
-[^Tannen2005]: Tannen, D. (2005). *Conversational Style: Analyzing Talk Among Friends.* Oxford University Press. — pause-lengthening on monetary topics.
-[^Yngve1970]: Yngve, V. H. (1970). On getting a word in edgewise. *Papers from the Sixth Regional Meeting, Chicago Linguistic Society*, 567–578. — backchannels.
-[^Heldner2010]: Heldner, M., & Edlund, J. (2010). Pauses, gaps and overlaps in conversations. *Journal of Phonetics*, 38(4), 555–568. — duration distributions of continuers vs. interrupts.
-[^Frontiers2024]: Stamou, V., et al. (2024). You have interrupted me again!: making voice assistants more dementia-friendly with incremental clarification. *Frontiers in Dementia*. doi:10.3389/frdem.2024.1343052
-[^Wang2025]: Wang, Y., et al. (2025). The effects of response time on older and young adults' interaction experience with chatbot. PMC11846305.
-[^Stanford2024]: Stanford HAI. (2024). Is It My Turn Yet? Teaching a Voice Assistant When to Speak. hai.stanford.edu/news/it-my-turn-yet-teaching-voice-assistant-when-speak
+[^Heldner2010]: Heldner, M., & Edlund, J. (2010). Pauses, gaps and overlaps in conversations. *Journal of Phonetics*, 38(4), 555–568.
+[^Yngve1970]: Yngve, V. H. (1970). On getting a word in edgewise. *Papers from the Sixth Regional Meeting, Chicago Linguistic Society*, 567–578.
+[^Giles1991]: Giles, H., & Coupland, N. (1991). *Language: Contexts and Consequences.* Open University Press. — Communication Accommodation Theory.
+[^PickeringGarrod2004]: Pickering, M. J., & Garrod, S. (2004). Toward a mechanistic psychology of dialogue. *Behavioral and Brain Sciences*, 27(2), 169–190.
+[^Crystal2003]: Crystal, D. (2003). *English as a Global Language* (2nd ed.). Cambridge University Press. — used here for context on L2 English speakers; the specific "pause and code-switching" claim cites the book qualitatively.
+[^ITU-G168]: ITU-T Recommendation G.168 (2015). *Digital network echo cancellers.*
+
+### Tier 2 — Demographic / public-data sources
+
+[^IndiaCensus2011]: Office of the Registrar General, India. (2011). *District Census Handbook — Suryapet.* (Surfaced via census2011.co.in.)
+[^TelanganaGov2024]: Government of Telangana, Suryapet District. *District Education Statistics, 2020-21.* (Surfaced via suryapet.telangana.gov.in/education/.)
+[^ICBSE2026]: Indian CBSE Schools Directory listing for Jaya HS Suryapeta. (icbse.com.) — used for school's grade-range, medium, and affiliation.
+
+### Tier 3 — Industry references (current SaaS defaults — NOT normative)
+
+These are vendor blog posts that describe *what current voice-agent SaaS products default to*. We cite them only to establish the industry baseline that this DFS deliberately deviates from for the Suryapet demographic; they are NOT used as evidence that those defaults are correct.
+
 [^Skit2024]: Skit Tech. End of Utterance Detection. tech.skit.ai/end-of-utterance-detection/
 [^LiveKit2024]: LiveKit. (2024). Turn Detection for Voice Agents. livekit.com/blog/turn-detection-voice-agents-vad-endpointing-model-based-detection
 [^SignalWire2026]: SignalWire. (2026). What Twenty Years of Voice Infrastructure Taught Me. signalwire.com/blogs/ceo/twenty-years-of-voice-infrastructure
 [^Sparkco2025]: SparkCo. (2025). Optimizing Voice Agent Barge-in Detection for 2025. sparkco.ai/blog/optimizing-voice-agent-barge-in-detection-for-2025
-[^ITU-G168]: ITU-T Recommendation G.168 (2015). *Digital network echo cancellers.*
+
+### Unverified — TO BE CONFIRMED [CITATION NEEDED]
+
+[^Yates1973]: Yates, J. (1973). The role of speech pause in second-language production. *Language and Speech*, 16(4), 305–316. **[CITATION NEEDED]** — the cite was carried forward from initial drafting and should be replaced with a verified L2-pause study (e.g. a Riggenbach 1991 or Towell, Hawkins & Bazergui 1996 reference) before being relied upon in production decisions.
+[^Tannen2005]: Tannen, D. *Conversational Style.* The book exists; the specific claim of "pause-lengthening on monetary topics" attributed to it is **[CITATION NEEDED]** — Tannen's published work is on conversational style generally, and we have not located the specific monetary-topic finding cited. The directional claim (deliberation slows speech on emotionally-loaded topics) is broadly supported in conversation-analysis literature but needs a precise source.
+[^Frontiers2024]: Stamou, V., et al. (2024). You have interrupted me again!: making voice assistants more dementia-friendly with incremental clarification. *Frontiers in Dementia*. doi:10.3389/frdem.2024.1343052 **[CITATION NEEDED]** — surfaced via web search; DOI and authorship to be verified before being elevated to Tier 1.
+[^Wang2025]: Wang, Y., et al. (2025). The effects of response time on older and young adults' interaction experience with chatbot. PMC11846305. **[CITATION NEEDED]** — surfaced via web search; PMC ID to be verified.
+[^Stanford2024]: Stanford HAI. (2024). Is It My Turn Yet? Teaching a Voice Assistant When to Speak. hai.stanford.edu/news/... **[CITATION NEEDED]** — appears to be a Stanford HAI editorial / news piece; needs verification of authorship and date before relying on its quantitative claims.
