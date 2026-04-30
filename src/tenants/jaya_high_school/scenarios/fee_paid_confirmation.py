@@ -14,52 +14,68 @@ from src.tenants.jaya_high_school.scenarios.base import Scenario
 
 
 def _intent_summary(record: ParentRecord) -> str:
-    """Turn 3: name + intent. Pause after this for parent's avuna/ok."""
+    """
+    Turn 3: name + intent + thank-you tail (one sentence). The ground-
+    truth Suryapet script (user directive 2026-04-30) collapses summary
+    + thanks into a single agent turn — no separate "details" stage by
+    default. After this, the agent waits ~3 seconds; if the parent
+    doesn't respond, the auto-close fires.
+    """
     is_telugu = (record.language_preference or "").strip().lower() == "telugu"
     if is_telugu:
+        # Verbatim Suryapet register from telangana_actual_register memory.
+        # "kattesaru" = honorific past "have paid"; more vernacular than
+        # the earlier "ayipoyindhi" / "fully paid ayyindi" forms.
+        # "term-1" is the user's verbatim term reference; ParentRecord
+        # carries a date-range term_label, but parents speak in term
+        # numbers ("term-1", "term-2"). For the Jaya HS deployment the
+        # April-September block is term-1.
         return (
-            f"{record.parent_name} garu, {record.child_name} school fees "
-            f"ayipoyindhi ani clarify cheyyadaniki call chesam, andi."
+            f"{record.child_name} term-1 fees kattesaru ani confirm "
+            f"cheyyadaniki call chesam sir. Thank you."
         )
     return (
-        f"Calling about {record.child_name}'s school fees, sir. "
-        "I have a brief update."
+        f"Calling to confirm {record.child_name} has paid the term fees, "
+        "sir. Thank you."
     )
 
 
 def _intent_details(record: ParentRecord) -> str:
-    """Turn 5: verified-record details + thanks (after parent's acknowledgment)."""
+    """
+    Optional follow-up details — fired only if the parent ASKS for
+    specifics ("how much?" / "kuda enti?"). The default Suryapet flow
+    does not deliver these proactively; the parent is trusted to know.
+    """
     is_telugu = (record.language_preference or "").strip().lower() == "telugu"
     last = record.payments[-1] if record.payments else None
     paid_str = f"₹{record.term_fee_total_inr:,}"
     if is_telugu:
         on_date = f", {last.date} na" if last else ""
         return (
-            f"Term fee {paid_str}{on_date} fully paid ayyindi. "
-            f"Dhanyavaadalu mee prompt payment ki, andi."
+            f"Term fee {paid_str}{on_date} kattesaru, sir."
         )
     on_date = f" on {last.date}" if last else ""
     return (
-        f"The term fee of {paid_str} has been received in full{on_date}. "
-        "Thank you for your prompt payment."
+        f"The term fee was {paid_str}{on_date}, sir."
     )
 
 
 def _opening(record: ParentRecord) -> str:
-    """
-    Backwards-compat full opening (summary + details concatenated).
-    Two-stage delivery (preferred) uses _intent_summary + _intent_details
-    rendered as separate turn-3 / turn-5 verbatim directives.
-    """
+    """Backwards-compat full opening (summary + details)."""
     return f"{_intent_summary(record)} {_intent_details(record)}"
 
 
 def _closing(record: ParentRecord) -> str:
-    voc = vocative(record)
+    """
+    Closing line, also used as the auto-close on 3-second silence after
+    the summary. Verbatim from the user's ground-truth script
+    (telangana_actual_register memory): "Thank you, have a peaceful
+    day, good day, bye."
+    """
     is_telugu = (record.language_preference or "").strip().lower() == "telugu"
     if is_telugu:
-        return f"Manchidi andi. Have a peaceful day."
-    return f"{thanks(record)}, {voc}. Have a peaceful day, {voc}."
+        return "Thank you, have a peaceful day. Good day, sir. Bye."
+    return "Thank you. Have a peaceful day, sir. Bye."
 
 
 def _pivot(record: ParentRecord) -> str:

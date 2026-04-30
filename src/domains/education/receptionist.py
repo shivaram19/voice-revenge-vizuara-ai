@@ -157,16 +157,17 @@ class EducationReceptionist(BaseReceptionist):
 
         is_telugu = (record.language_preference or "").strip().lower() == "telugu"
 
-        # Turn-based Telangana phone etiquette (user directive, 2026-04-30):
-        # greeting is JUST greeting + name + Garu. Caller will reply with
-        # "Cheppandi" / "Cheppu sir" / "Yes" — the natural invitation to
-        # proceed. The agent's NEXT turn (the scenario opening) carries
-        # the intent. This matches a real Suryapet school admin's call
-        # rhythm and also keeps Bulbul synthesis under ~2s for the
-        # greeting (vs ~7s observed for a 17-word greeting in commit
-        # CA9dd75b887690baafee03ba5678457ef4).
+        # Turn-based Telangana phone etiquette (user directive, 2026-04-30
+        # Suryapet ground-truth register): greeting introduces the school
+        # in present-continuous "matladthunnam" (we are speaking from).
+        # The reason for calling — past-tense "call chesam" — comes in
+        # turn 3 after the parent's "Haa cheppandi". Synthesis stays
+        # under ~3s on Bulbul.
         if is_telugu:
-            return f"Namaskaaram {record.parent_name} Garu."
+            return (
+                f"Namasthe sir, {short_name} nunchi matladthunnam, "
+                f"{record.parent_name} garu."
+            )
 
         return f"Namaste sir. From {short_name}."
 

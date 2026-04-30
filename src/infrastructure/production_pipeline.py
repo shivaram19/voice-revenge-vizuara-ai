@@ -147,6 +147,13 @@ _WRAPUP_KEYWORDS_DETAILS: tuple[str, ...] = (
 # cached reply so the parent feels heard.
 _BACKCHANNEL_TRIGGER_WORDS = 5
 
+# Auto-close on silence after the agent has delivered the scenario
+# summary + "thank you". Suryapet ground-truth register (user directive
+# 2026-04-30): if the parent does not respond within this window, the
+# agent says the closing line and ends the call from our side rather
+# than waiting indefinitely.
+_AUTO_CLOSE_SILENCE_MS = _env_int("AUTO_CLOSE_SILENCE_MS", 3000)
+
 
 # ---------------------------------------------------------------------------
 # Production Pipeline Orchestrator (Streaming)
@@ -232,6 +239,11 @@ class ProductionPipeline:
         # turn long enough that an acknowledgment improves the felt
         # experience of being heard (user directive 2026-04-30).
         self._last_caller_words: Dict[str, int] = {}
+        # Silence-triggered auto-close (Suryapet ground-truth register):
+        # after the agent delivers the scenario summary + "thank you",
+        # if the parent says nothing for AUTO_CLOSE_SILENCE_MS, the
+        # agent auto-dispatches the closing and ends the call.
+        self._auto_close_tasks: Dict[str, asyncio.Task] = {}
 
         # Barge-in timing state
         self._tts_start_time: Dict[str, float] = {}   # When TTS started sending
@@ -406,6 +418,8 @@ class ProductionPipeline:
         self._stage.pop(session_id, None)
         self._cached_audio.pop(session_id, None)
         self._last_caller_words.pop(session_id, None)
+        # Cancel any pending auto-close task.
+        self._cancel_auto_close(session_id)
 
         # Cancel any in-flight TTS
         task = self._tts_tasks.pop(session_id, None)
@@ -1011,6 +1025,10 @@ class ProductionPipeline:
         # cover a previous stage because the cache was still warming up.
         self._stage[session_id] = next_stage
 
+        # Any caller speech cancels a pending auto-close — they're
+        # engaging, not silent.
+        self._cancel_auto_close(session_id)
+
         audio = cache.get(audio_key) if audio_key else None
         if audio:
             logger.info(
@@ -1022,6 +1040,11 @@ class ProductionPipeline:
                 audio_key=audio_key,
             )
             self._dispatch_cached(session_id, audio)
+            # After delivering the summary, set the silence timer. If
+            # the parent doesn't respond within AUTO_CLOSE_SILENCE_MS
+            # we deliver the closing and terminate.
+            if next_stage == _STAGE_EXPECT_SUMMARY_ACK:
+                self._schedule_auto_close(session_id)
             return True
 
         # Stage advanced but cache miss — LLM will handle this turn,
@@ -1036,6 +1059,56 @@ class ProductionPipeline:
             reason="audio not yet synthesised",
         )
         return False
+
+    def _schedule_auto_close(self, session_id: str) -> None:
+        """
+        Start the silence timer. After AUTO_CLOSE_SILENCE_MS of caller
+        silence following the summary, dispatch the cached closing and
+        mark the stage DONE. Cancelled if the caller speaks.
+        """
+        existing = self._auto_close_tasks.get(session_id)
+        if existing and not existing.done():
+            existing.cancel()
+        self._auto_close_tasks[session_id] = asyncio.create_task(
+            self._auto_close_after_silence(session_id)
+        )
+
+    def _cancel_auto_close(self, session_id: str) -> None:
+        task = self._auto_close_tasks.pop(session_id, None)
+        if task and not task.done():
+            task.cancel()
+
+    async def _auto_close_after_silence(self, session_id: str) -> None:
+        """Wait the silence window, then deliver the cached closing."""
+        try:
+            await asyncio.sleep(_AUTO_CLOSE_SILENCE_MS / 1000.0)
+        except asyncio.CancelledError:
+            return
+
+        # Re-check that we're still in the post-summary stage (no caller
+        # speech advanced us). If the parent already responded, the
+        # _try_cached_response path will have advanced stage and
+        # cancelled this task.
+        stage = self._stage.get(session_id)
+        if stage != _STAGE_EXPECT_SUMMARY_ACK:
+            return
+
+        cache = self._cached_audio.get(session_id, {})
+        closing = cache.get("closing")
+        if not closing:
+            logger.warning(
+                "auto_close_no_cached_closing",
+                session_id=session_id,
+            )
+            return
+
+        logger.info(
+            "auto_close_silence_triggered",
+            session_id=session_id,
+            silence_ms=_AUTO_CLOSE_SILENCE_MS,
+        )
+        self._stage[session_id] = _STAGE_DONE
+        self._dispatch_cached(session_id, closing)
 
     def _dispatch_cached(self, session_id: str, audio: bytes) -> None:
         """
