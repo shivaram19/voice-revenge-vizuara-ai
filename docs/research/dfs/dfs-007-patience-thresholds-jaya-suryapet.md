@@ -118,11 +118,58 @@ These must be configurable so they can be re-tuned per cohort (e.g. an urban Hyd
 
 ---
 
-## 6. Open questions / future DFS
+## 6. Adaptive turn-length via Communication Accommodation
+
+A static `MAX_AGENT_TURN_WORDS = 18` is a *ceiling*, not the right *target*. A parent who replies "Yes" (1 word) is signalling minimal capacity to absorb agent speech in this moment — a 17-word agent reply, even if dignified, will feel intrusive. A parent who replies "Yes please go ahead, what is it about?" (8 words) has signalled engagement and can absorb a richer response.
+
+**Communication Accommodation Theory** [^Giles1991] [^PickeringGarrod2004] establishes that interlocutors converge on each other's speech style — turn length, lexical register, syntactic complexity — and that this convergence increases trust, perceived warmth, and conversational efficiency. For voice-agent UX with a non-tech-fluent demographic, mirroring is *especially* valuable: it reduces the cognitive load of every turn for the parent.
+
+### Adaptive rule
+
+After each caller utterance, the pipeline updates a per-session dynamic budget:
+
+```
+budget = clip(mean(last_2_caller_word_counts), 4, MAX_AGENT_TURN_WORDS)
+```
+
+The agent's reply is trimmed to ≤ budget at the nearest sentence boundary.
+
+- **Floor 4 words.** A reply shorter than ~4 words is perceived as clipped or rude (Yngve 1970 — minimum acknowledgment-plus-content unit).
+- **Ceiling: env `MAX_AGENT_TURN_WORDS`.** Even an engaged parent should not be lectured.
+- **Mean of the last 2 turns**, not the last only — a single 1-word "Yes" should not permanently lock the agent at 4 words; a sliding window lets the budget breathe with the conversational register.
+
+The agent's turn structure thus tracks the caller's: short → short, longer → longer. Combined with the verified-record block driving *content*, this gives every reply both correct material and culturally-attuned form.
+
+### Telemetry
+
+The pipeline emits `turn_budget_calibrated` events on every change:
+
+```json
+{"event": "turn_budget_calibrated",
+ "caller_words": 4,
+ "recent_window": [1, 4],
+ "dynamic_max_words": 3,
+ "previous_max_words": 18}
+```
+
+Post-call analysis can correlate the trajectory of the budget against the caller's overall satisfaction signals (call duration, success_signals matched, whether they asked for human escalation).
+
+### Why this is *not* over-engineered
+
+A static budget assumes a homogeneous audience. Our DFS-007 audience is not homogeneous — Suryapet parents include a 32-year-old IT-comfortable mother and a 50-year-old farmer in the same hour. The mirror is the only mechanism that adapts cheaply, in-call, to actual capacity rather than to a stereotype.
+
+[^Giles1991]: Giles, H., & Coupland, N. (1991). *Language: Contexts and Consequences.* Open University Press. Communication Accommodation Theory.
+[^PickeringGarrod2004]: Pickering, M. J., & Garrod, S. (2004). Toward a mechanistic psychology of dialogue. *Behavioral and Brain Sciences*, 27(2), 169–190.
+
+---
+
+## 7. Open questions / future DFS
 
 1. **Adaptive endpointing during fee turns.** Detect when the conversation enters a fee-discussion segment and dynamically extend `STT_UTTERANCE_END_MS` to 2500 ms.
 2. **Telugu wake-and-confirm.** Should the opening greeting be in Telugu and switch to English only on confirmation? — bidirectional study.
 3. **Empirical calibration.** After 50 Jaya HS calls, regress completion-rate and abandonment against the actual observed pause distributions; revisit each numeric.
+4. **Layered scenario openings by budget.** Each scenario could carry minimal / short / medium / full variants; the dynamic budget picks the largest variant that fits — useful when the parent's first reply already signals tight capacity.
+5. **LLM-side budget hint.** Inject the dynamic budget into the system prompt so the LLM aims at it natively rather than producing 30 words that get trimmed to 4 — saves tokens and produces more semantically-complete short turns.
 
 ---
 

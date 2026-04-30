@@ -174,6 +174,13 @@ class ProductionPipeline:
         # responding to "Hello?" while the greeting is still being said
         # (DFS-007 §3 / ADR-013 graceful onboarding).
         self._greeting_done: Dict[str, bool] = {}
+        # Adaptive turn-length state. We track the word count of each
+        # caller utterance and converge our reply length onto theirs
+        # (Communication Accommodation Theory: Giles 1991 / Pickering &
+        # Garrod 2004). A 4-word caller gets a 4-word agent reply; a
+        # 12-word caller gets up to 12. Floor 4 / ceiling MAX_AGENT_TURN_WORDS.
+        self._caller_word_history: Dict[str, list[int]] = {}
+        self._dynamic_max_words: Dict[str, int] = {}
 
         # Barge-in timing state
         self._tts_start_time: Dict[str, float] = {}   # When TTS started sending
@@ -225,6 +232,8 @@ class ProductionPipeline:
         self._greeting_done[session_id] = False
         self._pending_barge_in_started_at[session_id] = 0.0
         self._last_caller_speech_at[session_id] = 0.0
+        self._caller_word_history[session_id] = []
+        self._dynamic_max_words[session_id] = _MAX_AGENT_TURN_WORDS
 
         # Start streaming STT connection — patience knobs are env-driven
         # per ADR-013/DFS-007. Suryapet defaults: endpointing 400 ms,
@@ -305,6 +314,8 @@ class ProductionPipeline:
         self._greeting_done.pop(session_id, None)
         self._pending_barge_in_started_at.pop(session_id, None)
         self._last_caller_speech_at.pop(session_id, None)
+        self._caller_word_history.pop(session_id, None)
+        self._dynamic_max_words.pop(session_id, None)
 
         # Cancel any in-flight TTS
         task = self._tts_tasks.pop(session_id, None)
@@ -368,6 +379,9 @@ class ProductionPipeline:
                 is_final=True,
                 confidence=event.confidence,
             )
+            # Adaptive turn-length: feed each caller turn's word count
+            # into the per-session history and re-derive the budget.
+            self._adapt_turn_budget(session_id, event.text)
 
         # Trigger processing on speech_final or utterance_end
         if event.speech_final:
@@ -546,12 +560,16 @@ class ProductionPipeline:
                     situation = SpeechSituation.INTERRUPTED
                     self._was_interrupted[session_id] = False
 
-                # ADR-013: enforce MAX_AGENT_TURN_WORDS — keep agent turns
-                # short (priyaṃ vada). Trim to first ~N words at a sentence
-                # boundary; the next turn naturally extends the conversation.
-                response_text = self._enforce_turn_length(
-                    response_text, _MAX_AGENT_TURN_WORDS
+                # ADR-013 + Communication Accommodation: use the per-session
+                # dynamic budget (mirrored to the caller's recent word count)
+                # as the trim cap. A 4-word caller gets a 4-word reply; a
+                # 12-word caller gets up to 12. Trim still anchors at sentence
+                # boundaries; the system prompt also carries the same number
+                # as a soft hint so the LLM aims at it natively.
+                budget = self._dynamic_max_words.get(
+                    session_id, _MAX_AGENT_TURN_WORDS
                 )
+                response_text = self._enforce_turn_length(response_text, budget)
 
                 # Run blocking TTS HTTP call in thread pool — prevents event-loop
                 # starvation that would stall WebSocket message handling [^PY1]
@@ -664,6 +682,40 @@ class ProductionPipeline:
             await self._send_with_tracking(session_id, audio)
         except Exception as exc:
             logger.warning("filler_failed", session_id=session_id, error=str(exc))
+
+    def _adapt_turn_budget(self, session_id: str, caller_text: str) -> None:
+        """
+        Communication Accommodation: converge agent turn length onto the
+        caller's. Each caller utterance contributes its word count to a
+        per-session history; the budget is the mean of the most recent
+        two caller turns, clipped to [4, MAX_AGENT_TURN_WORDS].
+
+        Why mean-of-2 (not last only): a single 1-word "Yes" should not
+        permanently lock us at 4 words; a sliding-window of 2 lets the
+        budget breathe with the caller's actual register.
+
+        Why floor 4: anything shorter feels clipped / rude. Per Yngve
+        1970 the minimum acknowledgment-plus-content unit is ~4 words.
+        """
+        if not caller_text:
+            return
+        words = len(caller_text.split())
+        history = self._caller_word_history.setdefault(session_id, [])
+        history.append(words)
+        recent = history[-2:]
+        avg = sum(recent) / len(recent)
+        budget = max(4, min(_MAX_AGENT_TURN_WORDS, int(round(avg))))
+        prev = self._dynamic_max_words.get(session_id, _MAX_AGENT_TURN_WORDS)
+        self._dynamic_max_words[session_id] = budget
+        if budget != prev:
+            logger.info(
+                "turn_budget_calibrated",
+                session_id=session_id,
+                caller_words=words,
+                recent_window=recent,
+                dynamic_max_words=budget,
+                previous_max_words=prev,
+            )
 
     @staticmethod
     def _enforce_turn_length(text: str, max_words: int) -> str:
