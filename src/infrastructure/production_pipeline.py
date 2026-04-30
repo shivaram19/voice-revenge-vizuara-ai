@@ -118,6 +118,23 @@ _CHUNK_SIZE = _AUDIO_CHUNK_MS * _AUDIO_BYTES_PER_MS  # 3200 bytes
 # Patience filler text (used when LLM exceeds _LLM_FILLER_AFTER_MS)
 _FILLER_TEXT = "One moment please, sir."
 
+# Stage names for cached scenario flow (user directive 2026-04-30)
+_STAGE_EXPECT_INVITATION = "expect_invitation"
+_STAGE_EXPECT_SUMMARY_ACK = "expect_summary_ack"
+_STAGE_EXPECT_DETAILS_ACK = "expect_details_ack"
+_STAGE_DONE = "done"
+
+# Per-stage trigger keywords (lower-cased substring match against caller transcript)
+_ACK_KEYWORDS_SUMMARY: tuple[str, ...] = (
+    "avuna", "ok", "okay", "sare", "yes", "yeah", "haan", "achha",
+    "ji", "right", "correct", "tell me", "go ahead", "cheppu", "cheppandi",
+    "thank you", "thanks",
+)
+_WRAPUP_KEYWORDS_DETAILS: tuple[str, ...] = (
+    "thank you", "thanks", "manchidi", "okay", "ok", "bye", "goodbye",
+    "alright", "noted", "got it", "i see",
+)
+
 
 # ---------------------------------------------------------------------------
 # Production Pipeline Orchestrator (Streaming)
@@ -184,6 +201,19 @@ class ProductionPipeline:
         self._caller_word_history: Dict[str, list[int]] = {}
         self._dynamic_max_words: Dict[str, int] = {}
         self._session_budget_floor: Dict[str, int] = {}
+        # Cached-scenario flow (user directive 2026-04-30 — "highly
+        # intentional call, cache responses"). Pre-synthesise the
+        # scenario's summary / details / closing audio at on_call_start
+        # and play from cache when the parent's transcript matches a
+        # stage-specific signal. LLM fallback for off-script.
+        #
+        # Stage transitions:
+        #   expect_invitation  → on any non-empty transcript → summary
+        #   expect_summary_ack → on ack keywords             → details
+        #   expect_details_ack → on wrap-up keywords         → closing
+        #   done               → no further cached responses; LLM only
+        self._stage: Dict[str, str] = {}
+        self._cached_audio: Dict[str, Dict[str, bytes]] = {}
 
         # Barge-in timing state
         self._tts_start_time: Dict[str, float] = {}   # When TTS started sending
@@ -303,6 +333,14 @@ class ProductionPipeline:
             # Without a send callback we can't gate on playback — assume done.
             self._greeting_done[session_id] = True
 
+        # Cached scenario flow: pre-synth summary/details/closing in
+        # parallel so the agent can reply instantly when the parent's
+        # transcript matches a stage signal. The first stage starts
+        # waiting once the greeting playback finishes.
+        self._stage[session_id] = _STAGE_EXPECT_INVITATION
+        self._cached_audio[session_id] = {}
+        asyncio.create_task(self._prepare_cached_scenario_audio(session_id))
+
         return greeting_audio
 
     async def _send_greeting(self, session_id: str, audio: bytes) -> None:
@@ -347,6 +385,8 @@ class ProductionPipeline:
         self._caller_word_history.pop(session_id, None)
         self._dynamic_max_words.pop(session_id, None)
         self._session_budget_floor.pop(session_id, None)
+        self._stage.pop(session_id, None)
+        self._cached_audio.pop(session_id, None)
 
         # Cancel any in-flight TTS
         task = self._tts_tasks.pop(session_id, None)
@@ -429,6 +469,10 @@ class ProductionPipeline:
                         text=buffer[:80],
                     )
                     return
+                # Cached scenario flow first — instant if parent's transcript
+                # matches a stage signal (no LLM, no TTS synthesis latency).
+                if self._try_cached_response(session_id, buffer):
+                    return
                 asyncio.create_task(self._process_utterance(session_id, buffer))
 
     def _on_speech_started(self, session_id: str) -> None:
@@ -491,6 +535,8 @@ class ProductionPipeline:
                     session_id=session_id,
                     text=buffer[:80],
                 )
+                return
+            if self._try_cached_response(session_id, buffer):
                 return
             asyncio.create_task(self._process_utterance(session_id, buffer))
 
@@ -775,6 +821,160 @@ class ProductionPipeline:
                 dynamic_max_words=budget,
                 previous_max_words=prev,
             )
+
+    # ------------------------------------------------------------------
+    # Cached scenario flow (ADR-019-bis — cached intentional calls)
+    # ------------------------------------------------------------------
+
+    async def _prepare_cached_scenario_audio(self, session_id: str) -> None:
+        """
+        At call start, render the active scenario's summary / details /
+        closing into μ-law audio bytes and stash them per-session. The
+        flow's stage machine then plays these instantly when the parent
+        signals the corresponding transition — eliminating per-turn LLM +
+        Bulbul latency for the predictable happy path.
+        """
+        receptionist = self._session_receptionist.get(session_id)
+        if receptionist is None:
+            return
+        # The scenarios + record live on the receptionist's per-session
+        # dicts; tolerate any receptionist that doesn't expose them.
+        scenario = getattr(receptionist, "_scenarios", {}).get(session_id) if hasattr(receptionist, "_scenarios") else None
+        record = getattr(receptionist, "_parent_records", {}).get(session_id) if hasattr(receptionist, "_parent_records") else None
+        if scenario is None or record is None:
+            logger.info(
+                "cached_scenario_skipped",
+                session_id=session_id,
+                reason="no scenario or record loaded",
+            )
+            return
+
+        renderers = []
+        try:
+            renderers.append(("summary", scenario.render_intent_summary(record)))
+        except Exception:
+            pass
+        try:
+            details = scenario.render_intent_details(record)
+            if details:
+                renderers.append(("details", details))
+        except Exception:
+            pass
+        try:
+            renderers.append(("closing", scenario.render_closing(record)))
+        except Exception:
+            pass
+
+        if not renderers:
+            return
+
+        # Synthesise in parallel (gather) so the slowest line bounds the
+        # cache fill, not the sum.
+        async def _synth(key: str, text: str) -> tuple[str, bytes]:
+            try:
+                audio = await self._synthesize_to_ulaw(
+                    text, emotion_tone=None, situation=None, session_id=session_id
+                )
+                return key, audio
+            except Exception as exc:
+                logger.warning(
+                    "cached_scenario_synth_failed",
+                    session_id=session_id,
+                    key=key,
+                    error=str(exc),
+                )
+                return key, b""
+
+        results = await asyncio.gather(*(_synth(k, t) for k, t in renderers))
+        cache = self._cached_audio.setdefault(session_id, {})
+        for key, audio in results:
+            if audio:
+                cache[key] = audio
+        logger.info(
+            "cached_scenario_ready",
+            session_id=session_id,
+            keys=list(cache.keys()),
+        )
+
+    def _try_cached_response(self, session_id: str, transcript: str) -> bool:
+        """
+        Match the parent's transcript against the current stage's
+        keyword set; if it matches, dispatch the cached audio for the
+        next stage and advance state. Returns True iff a cached
+        response was queued (caller skips LLM path).
+        """
+        stage = self._stage.get(session_id, _STAGE_DONE)
+        if stage == _STAGE_DONE:
+            return False
+        cache = self._cached_audio.get(session_id, {})
+        if not cache:
+            return False  # cache not ready yet — fall through to LLM
+
+        text = (transcript or "").lower()
+
+        if stage == _STAGE_EXPECT_INVITATION:
+            # Any non-empty utterance after the greeting counts as
+            # invitation. Common forms: cheppandi, yes, hello, namaste.
+            audio = cache.get("summary")
+            if audio:
+                self._stage[session_id] = _STAGE_EXPECT_SUMMARY_ACK
+                logger.info(
+                    "cached_response_dispatched",
+                    session_id=session_id,
+                    stage_from=stage,
+                    stage_to=_STAGE_EXPECT_SUMMARY_ACK,
+                    triggered_by=text[:60],
+                )
+                self._dispatch_cached(session_id, audio)
+                return True
+            return False
+
+        if stage == _STAGE_EXPECT_SUMMARY_ACK:
+            if any(kw in text for kw in _ACK_KEYWORDS_SUMMARY):
+                audio = cache.get("details")
+                if audio:
+                    self._stage[session_id] = _STAGE_EXPECT_DETAILS_ACK
+                    logger.info(
+                        "cached_response_dispatched",
+                        session_id=session_id,
+                        stage_from=stage,
+                        stage_to=_STAGE_EXPECT_DETAILS_ACK,
+                        triggered_by=text[:60],
+                    )
+                    self._dispatch_cached(session_id, audio)
+                    return True
+            return False
+
+        if stage == _STAGE_EXPECT_DETAILS_ACK:
+            if any(kw in text for kw in _WRAPUP_KEYWORDS_DETAILS):
+                audio = cache.get("closing")
+                if audio:
+                    self._stage[session_id] = _STAGE_DONE
+                    logger.info(
+                        "cached_response_dispatched",
+                        session_id=session_id,
+                        stage_from=stage,
+                        stage_to=_STAGE_DONE,
+                        triggered_by=text[:60],
+                    )
+                    self._dispatch_cached(session_id, audio)
+                    return True
+            return False
+
+        return False
+
+    def _dispatch_cached(self, session_id: str, audio: bytes) -> None:
+        """Send pre-synthesised audio via the existing tracked-send path."""
+        send_cb = self._send_callbacks.get(session_id)
+        if not send_cb:
+            return
+        self._is_speaking[session_id] = True
+        self._tts_start_time[session_id] = time.time()
+        self._is_processing[session_id] = False  # cached path bypasses LLM
+        task = asyncio.create_task(
+            self._send_with_tracking(session_id, audio)
+        )
+        self._tts_tasks[session_id] = task
 
     @staticmethod
     def _enforce_turn_length(text: str, max_words: int) -> str:
