@@ -560,15 +560,20 @@ class ProductionPipeline:
                     situation = SpeechSituation.INTERRUPTED
                     self._was_interrupted[session_id] = False
 
-                # ADR-013 + Communication Accommodation: use the per-session
-                # dynamic budget (mirrored to the caller's recent word count)
-                # as the trim cap. A 4-word caller gets a 4-word reply; a
-                # 12-word caller gets up to 12. Trim still anchors at sentence
-                # boundaries; the system prompt also carries the same number
-                # as a soft hint so the LLM aims at it natively.
-                budget = self._dynamic_max_words.get(
-                    session_id, _MAX_AGENT_TURN_WORDS
-                )
+                # ADR-013 + Communication Accommodation: trim cap per turn.
+                # Exception — the SCENARIO OPENING (1st substantive agent
+                # turn after greeting) always uses the full MAX_AGENT_TURN_WORDS
+                # so the verified-record confirmation (e.g. "Aarav's fees are
+                # paid in full") is heard intact. From turn 2 onward, the
+                # dynamic budget mirrors the caller's recent word count and
+                # keeps subsequent banter calibrated to their register.
+                turn_index = self._turn_count.get(session_id, 0)
+                if turn_index <= self._OPENING_TURN_INDEX:
+                    budget = _MAX_AGENT_TURN_WORDS
+                else:
+                    budget = self._dynamic_max_words.get(
+                        session_id, _MAX_AGENT_TURN_WORDS
+                    )
                 response_text = self._enforce_turn_length(response_text, budget)
 
                 # Run blocking TTS HTTP call in thread pool — prevents event-loop
@@ -683,19 +688,30 @@ class ProductionPipeline:
         except Exception as exc:
             logger.warning("filler_failed", session_id=session_id, error=str(exc))
 
+    # Budget floor: anything shorter than 6 words risks clipping
+    # meaningful content (verified-record confirmations, scenario
+    # closings). Per Yngve 1970 the minimum acknowledgment-plus-content
+    # unit is ~4 words; we add 2 to allow for honorifics ("sir") and a
+    # short content fragment.
+    _BUDGET_FLOOR = 6
+    # The scenario *opening* turn (1st substantive agent reply after the
+    # parent's consent) MUST convey the verified-record confirmation in
+    # full — that is the *reason for the call*. Adapting the opening to
+    # match a 1-word "Yes" caller would clip the only content the parent
+    # actually needs to hear. So the opening turn always uses the full
+    # MAX_AGENT_TURN_WORDS; the budget mirror kicks in from turn 2.
+    _OPENING_TURN_INDEX = 0  # before any LLM turn has run
+
     def _adapt_turn_budget(self, session_id: str, caller_text: str) -> None:
         """
         Communication Accommodation: converge agent turn length onto the
         caller's. Each caller utterance contributes its word count to a
         per-session history; the budget is the mean of the most recent
-        two caller turns, clipped to [4, MAX_AGENT_TURN_WORDS].
+        two caller turns, clipped to [_BUDGET_FLOOR, MAX_AGENT_TURN_WORDS].
 
         Why mean-of-2 (not last only): a single 1-word "Yes" should not
-        permanently lock us at 4 words; a sliding-window of 2 lets the
+        permanently lock us at the floor; a sliding window lets the
         budget breathe with the caller's actual register.
-
-        Why floor 4: anything shorter feels clipped / rude. Per Yngve
-        1970 the minimum acknowledgment-plus-content unit is ~4 words.
         """
         if not caller_text:
             return
@@ -704,7 +720,7 @@ class ProductionPipeline:
         history.append(words)
         recent = history[-2:]
         avg = sum(recent) / len(recent)
-        budget = max(4, min(_MAX_AGENT_TURN_WORDS, int(round(avg))))
+        budget = max(self._BUDGET_FLOOR, min(_MAX_AGENT_TURN_WORDS, int(round(avg))))
         prev = self._dynamic_max_words.get(session_id, _MAX_AGENT_TURN_WORDS)
         self._dynamic_max_words[session_id] = budget
         if budget != prev:
