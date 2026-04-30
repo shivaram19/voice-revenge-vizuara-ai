@@ -299,6 +299,14 @@ class ProductionPipeline:
         # parent record cache, so the floor lookup below is correct).
         with self.latency.measure("greeting"):
             greeting_text = await receptionist.handle_call_start(session_id, caller, called)
+            # Kick off scenario-cache prep IMMEDIATELY, in parallel with
+            # greeting synthesis. The parent record is loaded by now.
+            # By the time the greeting finishes playing (~3s) and the
+            # parent says "Cheppandi", the summary should already be in
+            # cache, so the dispatch is instant rather than LLM-fallback.
+            self._stage[session_id] = _STAGE_EXPECT_INVITATION
+            self._cached_audio[session_id] = {}
+            asyncio.create_task(self._prepare_cached_scenario_audio(session_id))
             greeting_audio = await self._synthesize_to_ulaw(
                 greeting_text, emotion_tone=None, session_id=session_id
             )
@@ -332,14 +340,6 @@ class ProductionPipeline:
         else:
             # Without a send callback we can't gate on playback — assume done.
             self._greeting_done[session_id] = True
-
-        # Cached scenario flow: pre-synth summary/details/closing in
-        # parallel so the agent can reply instantly when the parent's
-        # transcript matches a stage signal. The first stage starts
-        # waiting once the greeting playback finishes.
-        self._stage[session_id] = _STAGE_EXPECT_INVITATION
-        self._cached_audio[session_id] = {}
-        asyncio.create_task(self._prepare_cached_scenario_audio(session_id))
 
         return greeting_audio
 
@@ -849,28 +849,24 @@ class ProductionPipeline:
             )
             return
 
-        renderers = []
+        # Render scenario lines safely (any rendering failure is logged
+        # and skipped — partial cache is better than no cache).
         try:
-            renderers.append(("summary", scenario.render_intent_summary(record)))
+            summary_text = scenario.render_intent_summary(record)
         except Exception:
-            pass
+            summary_text = ""
         try:
-            details = scenario.render_intent_details(record)
-            if details:
-                renderers.append(("details", details))
+            details_text = scenario.render_intent_details(record) or ""
         except Exception:
-            pass
+            details_text = ""
         try:
-            renderers.append(("closing", scenario.render_closing(record)))
+            closing_text = scenario.render_closing(record)
         except Exception:
-            pass
+            closing_text = ""
 
-        if not renderers:
-            return
-
-        # Synthesise in parallel (gather) so the slowest line bounds the
-        # cache fill, not the sum.
         async def _synth(key: str, text: str) -> tuple[str, bytes]:
+            if not text:
+                return key, b""
             try:
                 audio = await self._synthesize_to_ulaw(
                     text, emotion_tone=None, situation=None, session_id=session_id
@@ -885,9 +881,29 @@ class ProductionPipeline:
                 )
                 return key, b""
 
-        results = await asyncio.gather(*(_synth(k, t) for k, t in renderers))
         cache = self._cached_audio.setdefault(session_id, {})
-        for key, audio in results:
+
+        # Synthesise SUMMARY FIRST (sequential) so it lands in cache
+        # before the parent's first reply ("Cheppandi") arrives. The
+        # summary is the only line we need at stage 1; details + closing
+        # have ~10–20 seconds of conversation cover before they fire.
+        if summary_text:
+            _, summary_audio = await _synth("summary", summary_text)
+            if summary_audio:
+                cache["summary"] = summary_audio
+                logger.info(
+                    "cached_summary_ready",
+                    session_id=session_id,
+                    text_len=len(summary_text),
+                )
+
+        # Now synthesise details + closing in parallel — they're both
+        # needed later, no priority between them.
+        rest = await asyncio.gather(
+            _synth("details", details_text),
+            _synth("closing", closing_text),
+        )
+        for key, audio in rest:
             if audio:
                 cache[key] = audio
         logger.info(
@@ -898,69 +914,79 @@ class ProductionPipeline:
 
     def _try_cached_response(self, session_id: str, transcript: str) -> bool:
         """
-        Match the parent's transcript against the current stage's
-        keyword set; if it matches, dispatch the cached audio for the
-        next stage and advance state. Returns True iff a cached
-        response was queued (caller skips LLM path).
+        Match the parent's transcript against the current stage's keyword
+        set. If it matches:
+          - ALWAYS advance the stage (even if cache isn't ready yet, so
+            the LLM-handled fallback doesn't leave us at a stale stage —
+            otherwise the next caller turn would re-trigger the same
+            cached audio that the LLM already delivered, causing
+            duplicate playback).
+          - If the corresponding cached audio IS ready, dispatch it and
+            return True so the caller skips the LLM path.
+          - If not ready, return False so the LLM handles this single
+            turn; the stage will be correct for the next turn.
+        Returns True iff a cached response was queued (caller skips LLM).
         """
         stage = self._stage.get(session_id, _STAGE_DONE)
         if stage == _STAGE_DONE:
             return False
-        cache = self._cached_audio.get(session_id, {})
-        if not cache:
-            return False  # cache not ready yet — fall through to LLM
 
         text = (transcript or "").lower()
+        cache = self._cached_audio.get(session_id, {})
 
-        if stage == _STAGE_EXPECT_INVITATION:
+        # Determine the stage transition this transcript triggers.
+        next_stage: Optional[str] = None
+        audio_key: Optional[str] = None
+
+        if stage == _STAGE_EXPECT_INVITATION and text.strip():
             # Any non-empty utterance after the greeting counts as
             # invitation. Common forms: cheppandi, yes, hello, namaste.
-            audio = cache.get("summary")
-            if audio:
-                self._stage[session_id] = _STAGE_EXPECT_SUMMARY_ACK
-                logger.info(
-                    "cached_response_dispatched",
-                    session_id=session_id,
-                    stage_from=stage,
-                    stage_to=_STAGE_EXPECT_SUMMARY_ACK,
-                    triggered_by=text[:60],
-                )
-                self._dispatch_cached(session_id, audio)
-                return True
-            return False
-
-        if stage == _STAGE_EXPECT_SUMMARY_ACK:
+            next_stage = _STAGE_EXPECT_SUMMARY_ACK
+            audio_key = "summary"
+        elif stage == _STAGE_EXPECT_SUMMARY_ACK:
             if any(kw in text for kw in _ACK_KEYWORDS_SUMMARY):
-                audio = cache.get("details")
-                if audio:
-                    self._stage[session_id] = _STAGE_EXPECT_DETAILS_ACK
-                    logger.info(
-                        "cached_response_dispatched",
-                        session_id=session_id,
-                        stage_from=stage,
-                        stage_to=_STAGE_EXPECT_DETAILS_ACK,
-                        triggered_by=text[:60],
-                    )
-                    self._dispatch_cached(session_id, audio)
-                    return True
-            return False
-
-        if stage == _STAGE_EXPECT_DETAILS_ACK:
+                next_stage = _STAGE_EXPECT_DETAILS_ACK
+                audio_key = "details"
+        elif stage == _STAGE_EXPECT_DETAILS_ACK:
             if any(kw in text for kw in _WRAPUP_KEYWORDS_DETAILS):
-                audio = cache.get("closing")
-                if audio:
-                    self._stage[session_id] = _STAGE_DONE
-                    logger.info(
-                        "cached_response_dispatched",
-                        session_id=session_id,
-                        stage_from=stage,
-                        stage_to=_STAGE_DONE,
-                        triggered_by=text[:60],
-                    )
-                    self._dispatch_cached(session_id, audio)
-                    return True
+                next_stage = _STAGE_DONE
+                audio_key = "closing"
+
+        if next_stage is None:
+            # Off-script utterance for this stage — let the LLM handle it
+            # WITHOUT advancing stage (we still expect the same kind of
+            # response on the next turn).
             return False
 
+        # Advance stage now, regardless of whether the audio is ready.
+        # This prevents duplicate cached delivery when the LLM had to
+        # cover a previous stage because the cache was still warming up.
+        self._stage[session_id] = next_stage
+
+        audio = cache.get(audio_key) if audio_key else None
+        if audio:
+            logger.info(
+                "cached_response_dispatched",
+                session_id=session_id,
+                stage_from=stage,
+                stage_to=next_stage,
+                triggered_by=text[:60],
+                audio_key=audio_key,
+            )
+            self._dispatch_cached(session_id, audio)
+            return True
+
+        # Stage advanced but cache miss — LLM will handle this turn,
+        # subsequent turns will land on the correct cached audio.
+        logger.info(
+            "cached_response_miss",
+            session_id=session_id,
+            stage_from=stage,
+            stage_to=next_stage,
+            triggered_by=text[:60],
+            audio_key=audio_key,
+            reason="audio not yet synthesised",
+        )
         return False
 
     def _dispatch_cached(self, session_id: str, audio: bytes) -> None:
