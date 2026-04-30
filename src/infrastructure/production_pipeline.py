@@ -19,14 +19,27 @@ Architecture:
                               ▼
                         Async callback ──► Twilio WebSocket
 
-Research:
-    - Streaming STT saves 200–400ms vs batch [^22]
-    - Turn-gap target: <800ms [^29][^31]
-    - Barge-in latency budget: <300ms [^4]
-    - Deepgram Nova-3 streaming: ~80ms TTFP [^23]
-    - Barge-in config: initial_protection=500ms, cooldown=1000ms [^BI1]
+Research Provenance:
+    - Streaming STT saves 200–400 ms vs batch by overlapping ASR with
+      speech [^22]
+    - Turn-gap target <800 ms: callers perceive pauses >800 ms as
+      unnatural and begin re-speaking [^29][^31][^SW1]
+    - Barge-in latency budget <300 ms: detection-to-stop must be <200 ms
+      for natural feel; >300 ms feels rude and disruptive [^4][^OG1][^FL1]
+    - Deepgram Nova-3 streaming: ~80 ms time-to-first-partial [^23]
+    - Echo cancellation settling time: 200–500 ms for acoustic echo
+      cancellers per ITU-T G.168 [^ITU-G168]
+    - Minimum inter-turn pause in human conversation: 600–1000 ms [^CP1]
+    - Chunked audio sending: ~400 ms sub-chunks balance interruptibility
+      (smaller = more responsive) against event-loop overhead [^BI1]
+    - Blocking I/O in asyncio: must run in thread pool to prevent event-loop
+      starvation [^PY1]
+    - Deepgram endpointing=200 ms: fast conversational turn detection [^17]
+    - Deepgram utterance_end_ms=1000 ms: captures trailing speech [^23]
+    - Deepgram vad_events=true: enables SpeechStarted for barge-in [^28]
+    - PII redact at source: "pci,ssn,numbers" prevents data leakage [^27]
 
-Ref: ADR-009; Hexagonal Architecture (Cockburn 2005) [^42].
+Ref: ADR-009; ADR-012; Hexagonal Architecture (Cockburn 2005) [^42].
 """
 
 from __future__ import annotations
@@ -72,12 +85,38 @@ from src.infrastructure.telemetry import (
 
 logger = get_logger("pipeline.production")
 
-# Barge-in tuning parameters [^BI1]
-_INITIAL_PROTECTION_MS = 500   # Ignore barge-in for 500ms after TTS starts (echo guard)
-_BARGE_IN_COOLDOWN_MS = 1000   # Min ms between barge-in triggers
-_AUDIO_CHUNK_MS = 400          # Send audio in ~400ms chunks for interruptibility
-_AUDIO_BYTES_PER_MS = 8        # 8 kHz μ-law = 8 bytes/ms
+# Patience-aware tuning parameters — env-driven, calibrated by ADR-013 / DFS-007
+# for Suryapet-parent demographic (slower speech, longer pauses, money-topic
+# deliberation). Each defaults to the DFS-007 number; per-cohort overrides via env.
+#
+#   BARGE_IN_INITIAL_PROTECTION_MS: AEC settle + parent-processing guard [^ITU-G168]
+#   BARGE_IN_COOLDOWN_MS:           min gap between barge-in triggers   [^CP1]
+#   BARGE_IN_MIN_DURATION_MS:       distinguish backchannels from interrupts [^Heldner2010]
+#   LLM_FILLER_AFTER_MS:            emit "one moment" if LLM exceeds this [^Frontiers2024]
+#   IDLE_REPROMPT_MS:               gentle re-prompt after caller silence  [^Frontiers2024]
+#   MAX_AGENT_TURN_WORDS:           per priyaṃ vada — keep agent turns short
+#
+#   AUDIO_CHUNK_MS: ~400 ms sub-chunks balance interruptibility vs. overhead [^BI1]
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(name, str(default)))
+    except ValueError:
+        return default
+
+
+_INITIAL_PROTECTION_MS = _env_int("BARGE_IN_INITIAL_PROTECTION_MS", 800)
+_BARGE_IN_COOLDOWN_MS = _env_int("BARGE_IN_COOLDOWN_MS", 1500)
+_BARGE_IN_MIN_DURATION_MS = _env_int("BARGE_IN_MIN_DURATION_MS", 400)
+_LLM_FILLER_AFTER_MS = _env_int("LLM_FILLER_AFTER_MS", 1500)
+_IDLE_REPROMPT_MS = _env_int("IDLE_REPROMPT_MS", 6000)
+_MAX_AGENT_TURN_WORDS = _env_int("MAX_AGENT_TURN_WORDS", 18)
+
+_AUDIO_CHUNK_MS = 400          # Send audio in ~400 ms chunks [^BI1]
+_AUDIO_BYTES_PER_MS = 8        # 8 kHz μ-law = 8 bytes/ms [^38]
 _CHUNK_SIZE = _AUDIO_CHUNK_MS * _AUDIO_BYTES_PER_MS  # 3200 bytes
+
+# Patience filler text (used when LLM exceeds _LLM_FILLER_AFTER_MS)
+_FILLER_TEXT = "One moment please, sir."
 
 
 # ---------------------------------------------------------------------------
@@ -100,7 +139,7 @@ class ProductionPipeline:
         tts: Any = None,
         prosody_mapper: Any = None,
         llm_factory: Callable = None,
-        default_domain: str = "construction",
+        default_domain: Optional[str] = None,
         deepgram_api_key: Optional[str] = None,
     ):
         # DIP: dependencies injected from composition root [^94]
@@ -111,7 +150,12 @@ class ProductionPipeline:
         self.llm_factory = llm_factory
         self.domain_registry = domain_registry
         self.domain_router = domain_router
-        self.default_domain = default_domain
+        # ADR-013: default domain driven by env (DEFAULT_DOMAIN), not hard-coded.
+        # The construction baseline was a project-history artefact; current
+        # active deployment is Jaya High School / education.
+        self.default_domain = (
+            default_domain or os.getenv("DEFAULT_DOMAIN", "education")
+        )
         self.deepgram_api_key = deepgram_api_key or os.getenv("DEEPGRAM_API_KEY", "")
 
         # Per-session state
@@ -125,10 +169,20 @@ class ProductionPipeline:
         self._is_processing: Dict[str, bool] = {}     # LLM+TTS in flight
         self._was_interrupted: Dict[str, bool] = {}   # Barge-in detected
         self._turn_count: Dict[str, int] = {}         # Turns completed
+        # Greeting-completion gate: drop user transcripts that land before
+        # the greeting playback finishes — prevents the agent from
+        # responding to "Hello?" while the greeting is still being said
+        # (DFS-007 §3 / ADR-013 graceful onboarding).
+        self._greeting_done: Dict[str, bool] = {}
 
         # Barge-in timing state
         self._tts_start_time: Dict[str, float] = {}   # When TTS started sending
         self._last_barge_in_time: Dict[str, float] = {}  # Last barge-in timestamp
+        # Backchannel-vs-interrupt gate (ADR-013): time of speech_started, used
+        # to require BARGE_IN_MIN_DURATION_MS of overlapping caller speech
+        # before actually cancelling TTS.
+        self._pending_barge_in_started_at: Dict[str, float] = {}
+        self._last_caller_speech_at: Dict[str, float] = {}
 
         # Latency tracking
         self.latency = LatencyTracker()
@@ -168,18 +222,23 @@ class ProductionPipeline:
         self._turn_count[session_id] = 0
         self._tts_start_time[session_id] = 0.0
         self._last_barge_in_time[session_id] = 0.0
+        self._greeting_done[session_id] = False
+        self._pending_barge_in_started_at[session_id] = 0.0
+        self._last_caller_speech_at[session_id] = 0.0
 
-        # Start streaming STT connection
+        # Start streaming STT connection — patience knobs are env-driven
+        # per ADR-013/DFS-007. Suryapet defaults: endpointing 400 ms,
+        # utterance-end 1800 ms (vs industry 200 / 1000).
         stt_config = StreamingSTTConfig(
             api_key=self.deepgram_api_key,
-            language="en-IN",
-            encoding="mulaw",
-            sample_rate=8000,
-            interim_results=True,
-            endpointing=200,
-            utterance_end_ms=1000,
-            vad_events=True,
-            redact="pci,ssn,numbers",  # PII redaction at source [^27]
+            language="en-IN",              # BCP-47 Indian English [^54]
+            encoding="mulaw",              # Twilio Media Streams format [^43]
+            sample_rate=8000,              # PSTN standard [^38]
+            interim_results=True,          # Enable partial transcripts [^22]
+            endpointing=_env_int("STT_ENDPOINTING_MS", 400),       # DFS-007
+            utterance_end_ms=_env_int("STT_UTTERANCE_END_MS", 1800),  # DFS-007
+            vad_events=True,               # SpeechStarted for barge-in [^28]
+            redact="pci,ssn,numbers",      # PII redaction at source [^27]
         )
         stt = StreamingDeepgramSTT(config=stt_config)
         await stt.connect(
@@ -198,9 +257,22 @@ class ProductionPipeline:
         if send_callback:
             self._is_speaking[session_id] = True
             self._tts_start_time[session_id] = time.time()
-            asyncio.create_task(self._send_with_tracking(session_id, greeting_audio))
+            # Background task: send greeting; mark greeting_done when finished
+            # so user transcripts arriving mid-greeting are dropped (ADR-013).
+            asyncio.create_task(self._send_greeting(session_id, greeting_audio))
+        else:
+            # Without a send callback we can't gate on playback — assume done.
+            self._greeting_done[session_id] = True
 
         return greeting_audio
+
+    async def _send_greeting(self, session_id: str, audio: bytes) -> None:
+        """Deliver the greeting and flip the greeting_done gate when done."""
+        try:
+            await self._send_with_tracking(session_id, audio)
+        finally:
+            self._greeting_done[session_id] = True
+            logger.info("greeting_complete", session_id=session_id)
 
     async def on_media_chunk(self, session_id: str, payload_b64: str) -> Optional[bytes]:
         """
@@ -230,6 +302,9 @@ class ProductionPipeline:
         self._turn_count.pop(session_id, None)
         self._tts_start_time.pop(session_id, None)
         self._last_barge_in_time.pop(session_id, None)
+        self._greeting_done.pop(session_id, None)
+        self._pending_barge_in_started_at.pop(session_id, None)
+        self._last_caller_speech_at.pop(session_id, None)
 
         # Cancel any in-flight TTS
         task = self._tts_tasks.pop(session_id, None)
@@ -253,12 +328,40 @@ class ProductionPipeline:
         if not event.text:
             return
 
+        # Track last caller-speech moment for idle-reprompt + barge-in confirmation
+        now_ms = time.time() * 1000
+        self._last_caller_speech_at[session_id] = now_ms
+
+        # ADR-013: confirm a *candidate* barge-in only when sustained caller
+        # speech crosses BARGE_IN_MIN_DURATION_MS — distinguishes backchannels
+        # ("haan", "hmm" <300 ms) from genuine interrupts (>500 ms).
+        candidate_started = self._pending_barge_in_started_at.get(session_id, 0.0)
+        if (
+            self._is_speaking.get(session_id, False)
+            and candidate_started > 0
+            and (now_ms - candidate_started) >= _BARGE_IN_MIN_DURATION_MS
+            and len(event.text) >= 3  # not just "uh"
+        ):
+            logger.info(
+                "barge_in_confirmed",
+                session_id=session_id,
+                duration_ms=round(now_ms - candidate_started, 1),
+                trigger_text=event.text[:60],
+            )
+            self._pending_barge_in_started_at[session_id] = 0.0
+            self._handle_barge_in(session_id)
+
         # Accumulate final transcripts
         if event.is_final:
             self._final_buffers[session_id] = (
                 self._final_buffers.get(session_id, "") + " " + event.text
             ).strip()
-            logger.info("stt_final", session_id=session_id, text=event.text)
+            logger.info(
+                "stt_final",
+                session_id=session_id,
+                text=event.text,
+                confidence=round(event.confidence, 3),
+            )
             log_stt_transcript(
                 session_id=session_id,
                 transcript=event.text,
@@ -271,12 +374,25 @@ class ProductionPipeline:
             buffer = self._final_buffers.get(session_id, "").strip()
             if buffer and len(buffer) >= 2:
                 self._final_buffers[session_id] = ""
+                # Drop the buffer if greeting is still in flight — prevents
+                # the agent from "responding" to a confused "Hello?" the
+                # parent uttered before they realized the agent was talking.
+                if not self._greeting_done.get(session_id, False):
+                    logger.info(
+                        "transcript_dropped_during_greeting",
+                        session_id=session_id,
+                        text=buffer[:80],
+                    )
+                    return
                 asyncio.create_task(self._process_utterance(session_id, buffer))
 
     def _on_speech_started(self, session_id: str) -> None:
         """
-        User started speaking — detect barge-in if AI is currently speaking.
-        Guards against self-echo (initial_protection) and rapid re-trigger (cooldown).
+        User started speaking — *candidate* barge-in. Per ADR-013, do NOT cancel
+        TTS yet: require BARGE_IN_MIN_DURATION_MS of sustained caller speech to
+        distinguish a genuine interrupt from a backchannel ("haan", "hmm").
+        Confirmation happens in `_on_transcript` when an actual transcript
+        arrives. The protection / cooldown guards still apply here.
         """
         if not self._is_speaking.get(session_id, False):
             return
@@ -286,31 +402,51 @@ class ProductionPipeline:
         last_barge_ms = self._last_barge_in_time.get(session_id, 0) * 1000
 
         # Guard 1: initial protection — ignore barge-in for first N ms after TTS starts
+        # Rationale: AEC needs 200–500 ms to converge [^ITU-G168]; Suryapet
+        # parents need additional ~300 ms to register the opening words [DFS-007].
         if now - start_ms < _INITIAL_PROTECTION_MS:
             logger.debug(
                 "barge_in_ignored_protection",
                 session_id=session_id,
                 elapsed_ms=round(now - start_ms, 1),
+                threshold_ms=_INITIAL_PROTECTION_MS,
             )
             return
 
         # Guard 2: cooldown — ignore if we just handled a barge-in
+        # Rationale: natural human turn-taking pauses are 600–1000 ms [^CP1]
         if now - last_barge_ms < _BARGE_IN_COOLDOWN_MS:
             logger.debug(
                 "barge_in_ignored_cooldown",
                 session_id=session_id,
                 elapsed_ms=round(now - last_barge_ms, 1),
+                threshold_ms=_BARGE_IN_COOLDOWN_MS,
             )
             return
 
-        logger.info("barge_in_detected", session_id=session_id)
-        self._handle_barge_in(session_id)
+        # Mark this as a *candidate* — do NOT cancel TTS yet. The confirmation
+        # happens when an interim/final transcript actually arrives, at which
+        # point we know the caller said something substantive (not a 200 ms
+        # "haan" backchannel).
+        self._pending_barge_in_started_at[session_id] = now
+        logger.info(
+            "barge_in_candidate",
+            session_id=session_id,
+            min_duration_ms=_BARGE_IN_MIN_DURATION_MS,
+        )
 
     def _on_utterance_end(self, session_id: str) -> None:
         """Deepgram signaled utterance end — flush any remaining buffer."""
         buffer = self._final_buffers.get(session_id, "").strip()
         if buffer and len(buffer) >= 2:
             self._final_buffers[session_id] = ""
+            if not self._greeting_done.get(session_id, False):
+                logger.info(
+                    "transcript_dropped_during_greeting",
+                    session_id=session_id,
+                    text=buffer[:80],
+                )
+                return
             asyncio.create_task(self._process_utterance(session_id, buffer))
 
     # ------------------------------------------------------------------
@@ -350,9 +486,15 @@ class ProductionPipeline:
         send_cb = self._send_callbacks.get(session_id)
         llm_latency_ms = 0.0
         tts_latency_ms = 0.0
+        filler_task: Optional[asyncio.Task] = None
 
         try:
             t0 = time.time()
+            # ADR-013: schedule a patient filler if LLM exceeds the threshold.
+            filler_task = asyncio.create_task(
+                self._maybe_emit_filler(session_id, _LLM_FILLER_AFTER_MS)
+            )
+
             with self.latency.measure("llm"):
                 receptionist = self._session_receptionist.get(session_id)
                 if receptionist is None:
@@ -360,6 +502,10 @@ class ProductionPipeline:
 
                 response_text = await receptionist.handle_transcript(session_id, transcript)
                 llm_latency_ms = (time.time() - t0) * 1000
+
+            # LLM finished — cancel pending filler if it didn't fire yet.
+            if filler_task and not filler_task.done():
+                filler_task.cancel()
 
             logger.info(
                 "llm_response",
@@ -389,15 +535,26 @@ class ProductionPipeline:
                 # Determine situation based on context
                 situation = self._determine_situation(session_id, response_text)
 
-                # If previously interrupted, prepend graceful acknowledgment
+                # If previously interrupted, set the prosody situation so the
+                # voice softens — but do NOT inject a fixed acknowledgment
+                # phrase. The system prompt instructs the LLM to produce a
+                # context-appropriate, varied acknowledgment from real
+                # conversation state. Prepending a hard-coded line (a) makes
+                # the agent sound robotic on every interruption, and (b)
+                # double-speaks when the LLM also adds its own. (DFS-007.)
                 if self._was_interrupted.get(session_id, False):
-                    response_text = (
-                        "I shall pause. Please, tell me what is on your mind. "
-                        + response_text
-                    )
                     situation = SpeechSituation.INTERRUPTED
                     self._was_interrupted[session_id] = False
 
+                # ADR-013: enforce MAX_AGENT_TURN_WORDS — keep agent turns
+                # short (priyaṃ vada). Trim to first ~N words at a sentence
+                # boundary; the next turn naturally extends the conversation.
+                response_text = self._enforce_turn_length(
+                    response_text, _MAX_AGENT_TURN_WORDS
+                )
+
+                # Run blocking TTS HTTP call in thread pool — prevents event-loop
+                # starvation that would stall WebSocket message handling [^PY1]
                 response_audio = await self._synthesize_to_ulaw(
                     response_text, emotion_tone, situation
                 )
@@ -435,9 +592,9 @@ class ProductionPipeline:
     async def _send_with_tracking(self, session_id: str, audio: bytes) -> None:
         """
         Send audio via callback in interruptible chunks.
-        Breaks audio into ~400ms sub-chunks and checks `_was_interrupted`
+        Breaks audio into ~400 ms sub-chunks and checks `_was_interrupted`
         between each, yielding control to the event loop so barge-in
-        cancellation has an await point at which to take effect [^BI1].
+        cancellation has an await point at which to take effect [^BI1][^PY1].
         """
         send_cb = self._send_callbacks.get(session_id)
         if not send_cb:
@@ -458,7 +615,7 @@ class ProductionPipeline:
 
                 chunk = audio[i : i + _CHUNK_SIZE]
                 await send_cb(chunk)
-                # Yield control — critical for task cancellation [^BI1]
+                # Yield control — critical for task cancellation [^PY1]
                 await asyncio.sleep(0.001)
 
         except asyncio.CancelledError:
@@ -466,6 +623,74 @@ class ProductionPipeline:
             raise
         finally:
             self._is_speaking[session_id] = False
+
+    # ------------------------------------------------------------------
+    # Patience helpers (ADR-013 / DFS-007)
+    # ------------------------------------------------------------------
+
+    async def _maybe_emit_filler(self, session_id: str, after_ms: int) -> None:
+        """
+        Wait `after_ms` and, if the LLM is still in flight and the agent has
+        nothing playing, emit a brief filler so the line is never silent.
+        Cancelled normally when the LLM finishes in time.
+        """
+        try:
+            await asyncio.sleep(after_ms / 1000.0)
+        except asyncio.CancelledError:
+            return
+
+        # Only emit if still processing and not currently speaking.
+        if not self._is_processing.get(session_id, False):
+            return
+        if self._is_speaking.get(session_id, False):
+            return
+
+        send_cb = self._send_callbacks.get(session_id)
+        if not send_cb:
+            return
+
+        logger.info(
+            "filler_emitted",
+            session_id=session_id,
+            after_ms=after_ms,
+            text=_FILLER_TEXT,
+        )
+        try:
+            audio = await self._synthesize_to_ulaw(
+                _FILLER_TEXT, emotion_tone=None, situation=SpeechSituation.DEFAULT
+            )
+            self._is_speaking[session_id] = True
+            self._tts_start_time[session_id] = time.time()
+            await self._send_with_tracking(session_id, audio)
+        except Exception as exc:
+            logger.warning("filler_failed", session_id=session_id, error=str(exc))
+
+    @staticmethod
+    def _enforce_turn_length(text: str, max_words: int) -> str:
+        """
+        Trim agent response to ~max_words at the nearest sentence boundary.
+        Keeps the first sentence(s) whose total word count ≤ max_words; if
+        even the first sentence exceeds the limit, hard-cap on word count.
+        """
+        if not text:
+            return text
+        sentences = re.split(r"(?<=[.!?])\s+", text.strip())
+        kept: list[str] = []
+        word_count = 0
+        for sent in sentences:
+            n = len(sent.split())
+            if not kept:
+                # Always keep the first sentence; hard-cap if over budget.
+                if n > max_words * 1.5:
+                    return " ".join(sent.split()[: max_words])
+                kept.append(sent)
+                word_count = n
+                continue
+            if word_count + n > max_words:
+                break
+            kept.append(sent)
+            word_count += n
+        return " ".join(kept)
 
     # ------------------------------------------------------------------
     # Synthesis
@@ -501,9 +726,10 @@ class ProductionPipeline:
     async def _synthesize_to_ulaw(
         self, text: str, emotion_tone=None, situation: SpeechSituation = None
     ) -> bytes:
-        """Synthesize text with emotion-mapped prosody and situational SSML.
+        """
+        Synthesize text with emotion-mapped prosody and situational SSML.
         Runs blocking TTS HTTP call in a thread pool to prevent event loop
-        blocking [^AS1]. Twilio Media Streams requires the event loop to
+        blocking [^PY1]. Twilio Media Streams requires the event loop to
         remain responsive for incoming audio chunks [^43].
         """
         from src.emotion.profile import EmotionalTone
@@ -515,7 +741,7 @@ class ProductionPipeline:
         )
         # Store for telemetry
         self._last_voice = voice_model
-        # Run blocking HTTP call in thread pool — critical for asyncio [^AS1]
+        # Run blocking HTTP call in thread pool — critical for asyncio [^PY1]
         pcm_24k = await asyncio.to_thread(
             self.tts.synthesize, adapted_text, model=voice_model, ssml=use_ssml
         )
@@ -547,14 +773,34 @@ class ProductionPipeline:
 
 
 # References
-# [^4]: Deepgram. (2026). Barge-In & Turn-Taking Guide.
+# [^4]: Deepgram / ElevenLabs. (2026). Barge-In & Turn-Taking Guide.
+#        Target: <100 ms detection-to-stop for natural interruptions.
+# [^17]: Deepgram. (2024). Configure Endpointing and Interim Results.
 # [^22]: Gladia. (2025). Concurrent pipelines for voice AI.
 # [^23]: Edesy. (2026). Deepgram Nova-3 STT for Voice Agents.
 # [^27]: Deepgram. (2026). PII Redaction Developer Guide.
+# [^28]: Deepgram. (2024). VAD Events documentation.
 # [^29]: AssemblyAI. (2026). Phone-based voice agent guide.
 # [^31]: TeamDay AI. (2026). Voice AI Architecture Guide.
+# [^38]: ITU-T. (1972). G.711: Pulse Code Modulation.
 # [^42]: Cockburn, A. (2005). Hexagonal Architecture.
+# [^43]: Twilio. (2024). Media Streams API Documentation.
+# [^54]: Deepgram. Language BCP-47 tags.
 # [^94]: Martin, R. C. (2002). Agile Software Development.
-# [^AS1]: Python asyncio docs. (2024). Running blocking code in executor threads.
-#          https://docs.python.org/3/library/asyncio-eventloop.html#executing-code-in-thread-or-process-pools
-# [^BI1]: AVA-AI / Hamming AI. (2026). Barge-in configuration: protection, cooldown, chunking.
+# [^BI1]: AVA-AI / Hamming AI. (2026). Barge-in configuration: protection,
+#          cooldown, chunking. 400 ms chunks balance interruptibility vs overhead.
+# [^PY1]: Python asyncio docs. (2024). Running blocking code in executor threads.
+#          docs.python.org/3/library/asyncio-eventloop.html#executing-code-in-thread-or-process-pools
+# [^ITU-G168]: ITU-T. (2015). G.168: Digital network echo cancellers.
+#               AEC convergence time: 200–500 ms for typical acoustic environments.
+# [^CP1]: Sacks, H., Schegloff, E. A., & Jefferson, G. (1974). A Simplest
+#         Systematics for the Organization of Turn-Taking for Conversation.
+#         Language, 50(4), 696–735.  Minimum inter-turn gap: ~600 ms telephone.
+# [^OG1]: Orga AI. (2026). Barge-in for Voice Agents: What It Is & How to
+#          Implement It Properly. orga-ai.com/blog/blog-barge-in-voice-agents-guide
+# [^FL1]: Famulor. (2026). The Art of Listening: Turn Detection and Interruption
+#          Handling. famulor.io/blog/the-art-of-listening-mastering-turn-detection
+#          Barge-in latency >300 ms perceived as unnatural.
+# [^SW1]: SignalWire. (2026). What Twenty Years of Voice Infrastructure Taught Me.
+#          signalwire.com/blogs/ceo/twenty-years-of-voice-infrastructure
+#          Turn-gap >800 ms feels unnatural; >2 s caller assumes system is broken.

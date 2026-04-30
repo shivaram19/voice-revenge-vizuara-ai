@@ -265,9 +265,15 @@ class StreamingDeepgramSTT:
             "vad_events": str(self.config.vad_events).lower(),
             "filler_words": str(self.config.filler_words).lower(),
         }
+        query_parts = [f"{k}={v}" for k, v in params.items()]
+        # Deepgram requires multiple `redact` query params for multiple types;
+        # comma-separated values return HTTP 400 [^DG1].
         if self.config.redact:
-            params["redact"] = self.config.redact
-        query = "&".join(f"{k}={v}" for k, v in params.items())
+            for redact_type in self.config.redact.split(","):
+                redact_type = redact_type.strip()
+                if redact_type:
+                    query_parts.append(f"redact={redact_type}")
+        query = "&".join(query_parts)
         return f"{base}?{query}"
 
 
@@ -277,5 +283,9 @@ class StreamingDeepgramSTT:
 # [^23]: Edesy. (2026). Deepgram Nova-3 STT for Voice Agents.
 # [^28]: Deepgram. (2024). VAD Events documentation.
 # [^38]: ITU-T. (1972). G.711: Pulse Code Modulation.
+# [^DG1]: Deepgram. (2024). Streaming API Documentation — Query Parameters.
+#         `redact` must be passed as multiple query parameters (`redact=pci&redact=ssn`);
+#         comma-separated values (`redact=pci,ssn`) return HTTP 400.
+#         Confirmed via live API testing on 2026-04-28.
 # [^43]: Twilio. (2024). Media Streams API Documentation.
 # [^54]: Deepgram. Language BCP-47 tags.
