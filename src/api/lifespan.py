@@ -101,15 +101,49 @@ async def lifespan(app: FastAPI):
         from src.infrastructure.production_pipeline import ProductionPipeline
         from src.infrastructure.demo_stt_deepgram import DemoSTTDeepgram
         from src.infrastructure.deepgram_tts_client import DeepgramTTSClient
+        from src.infrastructure.tts_router import TTSRouter
         from src.infrastructure.azure_openai_client import AzureOpenAILLMClient
         from src.emotion.tts_prosody import TTSProsodyMapper
+
+        # ADR-019: dual-TTS architecture. Aura is the default; Sarvam
+        # Bulbul plugs in for Telugu-preference parents when its key is
+        # configured. The Telugu route falls through to the default
+        # gracefully if no key is present, preserving production
+        # uptime regardless of Sarvam availability.
+        deepgram_tts = DeepgramTTSClient()
+        sarvam_key = os.getenv("SARVAM_API_KEY", "").strip()
+        sarvam_tts = None
+        if sarvam_key:
+            try:
+                from src.infrastructure.sarvam_tts_client import SarvamTTSClient
+                sarvam_tts = SarvamTTSClient(
+                    api_key=sarvam_key,
+                    target_language_code="te-IN",
+                    speaker=os.getenv("SARVAM_TELUGU_SPEAKER", "gokul"),
+                )
+                logger.info(
+                    "sarvam_tts_configured",
+                    speaker=os.getenv("SARVAM_TELUGU_SPEAKER", "gokul"),
+                    target_language="te-IN",
+                )
+            except Exception as exc:  # adapter init failure → fall through
+                logger.warning("sarvam_tts_init_failed", error=str(exc))
+                sarvam_tts = None
+        else:
+            logger.info("sarvam_tts_not_configured")
+
+        tts = TTSRouter(
+            default=deepgram_tts,
+            by_language={"telugu": sarvam_tts} if sarvam_tts else None,
+        )
+        logger.info("tts_router_configured", routes=tts.routes_summary())
 
         app.state.demo_pipeline = ProductionPipeline(
             domain_registry=domain_registry,
             domain_router=domain_router,
             gateway=TwilioGateway(),
             stt=DemoSTTDeepgram(language="en-IN"),
-            tts=DeepgramTTSClient(),
+            tts=tts,
             prosody_mapper=TTSProsodyMapper(),
             llm_factory=AzureOpenAILLMClient,
             deepgram_api_key=os.getenv("DEEPGRAM_API_KEY", ""),

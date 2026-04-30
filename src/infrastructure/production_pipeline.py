@@ -269,7 +269,9 @@ class ProductionPipeline:
         # parent record cache, so the floor lookup below is correct).
         with self.latency.measure("greeting"):
             greeting_text = await receptionist.handle_call_start(session_id, caller, called)
-            greeting_audio = await self._synthesize_to_ulaw(greeting_text, emotion_tone=None)
+            greeting_audio = await self._synthesize_to_ulaw(
+                greeting_text, emotion_tone=None, session_id=session_id
+            )
 
         # Now that handle_call_start has run, the parent record (if any)
         # is loaded. Set the per-session budget floor: higher when no
@@ -608,7 +610,7 @@ class ProductionPipeline:
                 # Run blocking TTS HTTP call in thread pool — prevents event-loop
                 # starvation that would stall WebSocket message handling [^PY1]
                 response_audio = await self._synthesize_to_ulaw(
-                    response_text, emotion_tone, situation
+                    response_text, emotion_tone, situation, session_id=session_id
                 )
                 tts_latency_ms = (time.time() - t1) * 1000
 
@@ -709,7 +711,10 @@ class ProductionPipeline:
         )
         try:
             audio = await self._synthesize_to_ulaw(
-                _FILLER_TEXT, emotion_tone=None, situation=SpeechSituation.DEFAULT
+                _FILLER_TEXT,
+                emotion_tone=None,
+                situation=SpeechSituation.DEFAULT,
+                session_id=session_id,
             )
             self._is_speaking[session_id] = True
             self._tts_start_time[session_id] = time.time()
@@ -829,13 +834,23 @@ class ProductionPipeline:
         return SpeechSituation.DEFAULT
 
     async def _synthesize_to_ulaw(
-        self, text: str, emotion_tone=None, situation: SpeechSituation = None
+        self,
+        text: str,
+        emotion_tone=None,
+        situation: SpeechSituation = None,
+        session_id: Optional[str] = None,
     ) -> bytes:
         """
         Synthesize text with emotion-mapped prosody and situational SSML.
         Runs blocking TTS HTTP call in a thread pool to prevent event loop
         blocking [^PY1]. Twilio Media Streams requires the event loop to
         remain responsive for incoming audio chunks [^43].
+
+        ADR-019: when `session_id` is provided and the receptionist
+        exposes `session_language_preference`, the language preference is
+        threaded into the TTS layer. A TTSRouter (if installed) uses it
+        to pick a Telugu-capable provider (Sarvam Bulbul) for Telugu-pref
+        sessions and the default (Deepgram Aura) otherwise.
         """
         from src.emotion.profile import EmotionalTone
         target = emotion_tone or EmotionalTone.CALM
@@ -846,9 +861,30 @@ class ProductionPipeline:
         )
         # Store for telemetry
         self._last_voice = voice_model
-        # Run blocking HTTP call in thread pool — critical for asyncio [^PY1]
+
+        # Look up language preference for routing (graceful fall-through).
+        lang_pref = ""
+        if session_id is not None:
+            receptionist = self._session_receptionist.get(session_id)
+            if receptionist is not None and hasattr(
+                receptionist, "session_language_preference"
+            ):
+                try:
+                    lang_pref = receptionist.session_language_preference(session_id) or ""
+                except Exception:
+                    lang_pref = ""
+
+        # Run blocking HTTP call in thread pool — critical for asyncio [^PY1].
+        # The TTSRouter accepts `lang_pref` and forwards to the right adapter;
+        # plain TTS adapters (Deepgram-only deployments) accept the kwarg
+        # via **kwargs / no-op when wrapped in TTSRouter; otherwise the
+        # router strips it before calling the adapter.
         pcm_24k = await asyncio.to_thread(
-            self.tts.synthesize, adapted_text, model=voice_model, ssml=use_ssml
+            self.tts.synthesize,
+            adapted_text,
+            model=voice_model,
+            ssml=use_ssml,
+            lang_pref=lang_pref,
         )
 
         wav_buffer = io.BytesIO(pcm_24k)

@@ -448,6 +448,18 @@ class EducationReceptionist(BaseReceptionist):
         """
         return self._parent_records.get(session_id) is not None
 
+    def session_language_preference(self, session_id: str) -> str:
+        """
+        Return the parent's language preference for this session, or ""
+        if no record is loaded. Used by `TTSRouter` (ADR-019) to route
+        each synthesis call to the appropriate TTS provider — Bulbul
+        for `"Telugu"`, Aura (default) otherwise.
+        """
+        record = self._parent_records.get(session_id)
+        if record is None:
+            return ""
+        return (record.language_preference or "").strip()
+
 
 # References
 # - "Parent data contract" project memory (2026-04-30).
