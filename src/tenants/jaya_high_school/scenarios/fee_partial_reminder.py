@@ -14,20 +14,32 @@ from src.tenants.jaya_high_school.scenarios.base import Scenario
 
 
 def _opening(record: ParentRecord) -> str:
+    """Lead with intent (turn 3 of the cheppandi-pattern flow)."""
+    is_telugu = (record.language_preference or "").strip().lower() == "telugu"
     paid = f"₹{record.fee_paid_total_inr:,}"
     balance = f"₹{record.fee_balance_inr:,}"
+
+    if is_telugu:
+        return (
+            f"{record.child_name} school fees gurinchi call chesthunna, Garu. "
+            f"{paid} paid ayyindi already. Balance {balance} undi, "
+            f"due {record.fee_due_date} ki."
+        )
+
     return (
-        f"{thanks(record)} for taking the call, {vocative(record)}. "
-        f"I see you have paid {paid} of {record.child_name}'s fees. "
-        f"A balance of {balance} remains for {record.term_label}, "
-        f"due by {record.fee_due_date}."
+        f"Calling about {record.child_name}'s school fees, sir. "
+        f"{paid} has been paid; a balance of {balance} remains for "
+        f"{record.term_label}, due by {record.fee_due_date}."
     )
 
 
 def _closing(record: ParentRecord) -> str:
     voc = vocative(record)
+    is_telugu = (record.language_preference or "").strip().lower() == "telugu"
+    if is_telugu:
+        return f"Dhanyavaadalu, Garu. Office vaaru note chestaaru. Have a peaceful day."
     return (
-        f"{thanks(record)}, {voc}. The office will note this conversation. "
+        f"Thank you, {voc}. The office will note this conversation. "
         f"Have a peaceful day, {voc}."
     )
 

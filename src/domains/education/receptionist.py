@@ -153,36 +153,22 @@ class EducationReceptionist(BaseReceptionist):
         short_name = self.config.company_name.split(",")[0].strip()
 
         if record is None:
-            # No record loaded — generic but still names the topic so
-            # the parent knows why this call is happening.
-            return (
-                f"Namaste sir. Calling from {short_name} about your "
-                "child's school fees. Is this a good time to talk, sir?"
-            )
+            return f"Namaste sir. From {short_name}."
 
         is_telugu = (record.language_preference or "").strip().lower() == "telugu"
 
+        # Turn-based Telangana phone etiquette (user directive, 2026-04-30):
+        # greeting is JUST greeting + name + Garu. Caller will reply with
+        # "Cheppandi" / "Cheppu sir" / "Yes" — the natural invitation to
+        # proceed. The agent's NEXT turn (the scenario opening) carries
+        # the intent. This matches a real Suryapet school admin's call
+        # rhythm and also keeps Bulbul synthesis under ~2s for the
+        # greeting (vs ~7s observed for a 17-word greeting in commit
+        # CA9dd75b887690baafee03ba5678457ef4).
         if is_telugu:
-            # DFS-011 §2 + user feedback (2026-04-30): Telangana phone
-            # register names the call's intent within the greeting itself,
-            # not after consent. A real Suryapet school admin opens with
-            # name + Garu, then states purpose, then asks consent — in
-            # one breath. Code-mixed Telugu-English (Telugu function
-            # words + English domain nouns: "fees", "school") is the
-            # modal register.
-            return (
-                f"Namaskaaram {record.parent_name} Garu. "
-                f"Nenu {short_name} nundi {record.child_name} fees gurinchi "
-                "maatladuthunna. Maatladaniki time undha, Garu?"
-            )
+            return f"Namaskaaram {record.parent_name} Garu."
 
-        # English-pref: intent stated in greeting too (per same user
-        # feedback — context was missing). Aura renders this naturally.
-        return (
-            f"Namaste sir. From {short_name}, calling about "
-            f"{record.child_name}'s school fees. "
-            "Is this a good time to talk, sir?"
-        )
+        return f"Namaste sir. From {short_name}."
 
     # ------------------------------------------------------------------
     # Lingering-signal detection

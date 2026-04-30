@@ -16,18 +16,33 @@ from src.tenants.jaya_high_school.scenarios.base import Scenario
 
 
 def _opening(record: ParentRecord) -> str:
+    """Lead with intent + care (turn 3 of cheppandi-pattern flow). Sensitive."""
+    is_telugu = (record.language_preference or "").strip().lower() == "telugu"
+    if is_telugu:
+        return (
+            f"{record.child_name} gurinchi call chesthunna, Garu. "
+            f"Konni rojulu ga school ki raavatam ledu. "
+            "Intlo anni alright na, Garu?"
+        )
     return (
-        f"{thanks(record)} for taking the call, {vocative(record)}. "
+        f"Calling about {record.child_name}, sir. "
         f"We have not seen {record.child_name} in school for a few days. "
-        f"I just wanted to check — is everything alright at home?"
+        f"Is everything alright at home?"
     )
 
 
 def _closing(record: ParentRecord) -> str:
     voc = vocative(record)
+    is_telugu = (record.language_preference or "").strip().lower() == "telugu"
+    if is_telugu:
+        return (
+            f"Dhanyavaadalu, Garu. {record.child_name} ni school lo "
+            f"chudali ani anukunta. Em help kaavalsina, office ki call "
+            f"cheyyandi. Have a peaceful day."
+        )
     return (
-        f"{thanks(record)} {voc}. We hope to see {record.child_name} back soon. "
-        "Please feel free to call the office anytime. "
+        f"Thank you {voc}. We hope to see {record.child_name} back soon. "
+        f"Please feel free to call the office anytime. "
         f"Have a peaceful day, {voc}."
     )
 

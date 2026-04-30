@@ -15,17 +15,29 @@ from src.tenants.jaya_high_school.scenarios.base import Scenario
 
 
 def _opening(record: ParentRecord) -> str:
+    """Lead with intent (turn 3 of the cheppandi-pattern flow)."""
+    is_telugu = (record.language_preference or "").strip().lower() == "telugu"
+    if is_telugu:
+        return (
+            f"{record.child_name} admission gurinchi call chesthunna, Garu. "
+            f"Mee inquiry pi update share cheyalsi undi. Cheppanaa?"
+        )
     return (
-        f"{thanks(record)} for taking the call, {vocative(record)}. "
-        f"I am calling regarding {record.child_name}'s admission inquiry "
-        f"with our school. May I share an update?"
+        f"Calling about {record.child_name}'s admission inquiry, sir. "
+        f"May I share an update?"
     )
 
 
 def _closing(record: ParentRecord) -> str:
     voc = vocative(record)
+    is_telugu = (record.language_preference or "").strip().lower() == "telugu"
+    if is_telugu:
+        return (
+            f"Dhanyavaadalu Jaya High School consider chesinanduku, Garu. "
+            f"Mee child shine avvali. Have a peaceful day."
+        )
     return (
-        f"{thanks(record)} for considering Jaya High School, {voc}. "
+        f"Thank you for considering Jaya High School, {voc}. "
         f"May your child shine. Have a peaceful day, {voc}."
     )
 

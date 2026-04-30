@@ -14,24 +14,38 @@ from src.tenants.jaya_high_school.scenarios.base import Scenario
 
 
 def _opening(record: ParentRecord) -> str:
+    """
+    Scenario opening fires AFTER the parent's "Cheppandi" / "Yes" /
+    invitation in turn 2. The greeting was just "Namaskaaram {name}
+    Garu" — no intent stated yet — so this turn LEADS with the intent
+    (Telangana phone-etiquette flow per user directive 2026-04-30).
+    """
+    is_telugu = (record.language_preference or "").strip().lower() == "telugu"
     last = record.payments[-1] if record.payments else None
     paid_str = f"₹{record.term_fee_total_inr:,}"
+
+    if is_telugu:
+        on_date = f" {last.date} na" if last else ""
+        return (
+            f"{record.child_name} school fees gurinchi call chesthunna, Garu. "
+            f"Term fee {paid_str} fully paid ayyindi{on_date}. "
+            "Dhanyavaadalu, mee prompt payment ki."
+        )
+
     on_date = f" on {last.date}" if last else ""
-    voc = vocative(record)
     return (
-        f"{thanks(record)} for taking the call, {voc}. "
-        f"I am calling to confirm that {record.child_name}'s fee of "
-        f"{paid_str} for {record.term_label} has been received{on_date}. "
-        "Everything is settled."
+        f"Calling about {record.child_name}'s school fees, sir. "
+        f"The term fee of {paid_str} has been received in full{on_date}. "
+        "Thank you for your prompt payment."
     )
 
 
 def _closing(record: ParentRecord) -> str:
     voc = vocative(record)
-    return (
-        f"{thanks(record)} for your prompt payment, {voc}. "
-        f"Have a peaceful day, {voc}."
-    )
+    is_telugu = (record.language_preference or "").strip().lower() == "telugu"
+    if is_telugu:
+        return f"Manchidi, {voc}. Have a peaceful day."
+    return f"{thanks(record)}, {voc}. Have a peaceful day, {voc}."
 
 
 def _pivot(record: ParentRecord) -> str:
