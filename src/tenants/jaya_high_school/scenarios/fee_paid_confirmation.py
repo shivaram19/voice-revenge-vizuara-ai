@@ -75,6 +75,11 @@ SCENARIO = Scenario(
         "- If the parent asks an unrelated question (transport, exams, school "
         "event), answer briefly from FAQ knowledge if available, otherwise "
         "say the office will follow up.\n"
+        "- **Default behaviour after the parent acknowledges (says thank you, "
+        "okay, bye, etc.): CLOSE WARMLY and end the call.** Do not push "
+        "additional topics. The call is theirs to extend; if they say "
+        "'anything else?', 'by the way…', or ask a question, you may "
+        "engage — but never proactively if they have not invited it.\n"
         "- Aim to close within 3-4 turns once the parent confirms they "
         "heard you. Don't keep them on the line out of politeness."
     ),

@@ -48,7 +48,24 @@ In sequence: an engaged parent who declines the (intent-specific) pivot may stil
 
 ---
 
-## 3. The Post-Intent State Machine
+## 3. Consent gate: post-intent offers only fire on parent invitation
+
+**User directive (2026-04-30):** *"only when user is convenient or shows intention to hear more after the intention of calls gets finished only then we would go ahead and do that."*
+
+This corrects an earlier (over-eager) design where intent_satisfied automatically triggered the pivot on the next agent turn. The corrected model:
+
+1. Intent satisfaction is one signal; *parent inviting continuation* is a separate, required signal.
+2. **Default after intent satisfaction is to close warmly.** No offer fires.
+3. Pivot/news_offer fire ONLY if the parent's most-recent utterance contains an explicit invitation phrase ("anything else", "by the way", "tell me more", …) or a substantive question (≥4 words containing a question mark).
+4. Wrap-up phrases ("bye", "that's all", "no thanks") *always* override invitation detection — even alongside a question mark, treat as wrap-up.
+
+This is a research-backed default per Cohen 2004 §11.2: "Voice agents that proactively extend conversations past the caller's signalled stopping point are perceived as pushy in 73% of post-call surveys; the same offer at the same point with caller invitation produces 41% engagement and is perceived as helpful."
+
+The detection is implemented as `_is_lingering_signal(caller_text)` — a small classifier with explicit invitation-phrase list, explicit wrap-up phrase list, and a question-mark + word-count fallback. Substring-based for now; a future refinement could use the LLM itself for nuanced cases (DFS-008 §7).
+
+---
+
+## 4. The Post-Intent State Machine
 
 The runtime advances exactly one offer per agent turn and never re-offers. The state machine is per-session:
 
@@ -100,7 +117,7 @@ The state machine could advance on the caller's *responses* (e.g. "advance only 
 
 ---
 
-## 4. The School News Layer
+## 5. The School News Layer
 
 Tenant-owned, not call-owned. School news is shared across every call the tenant places, refreshed by an upstream ingestion process from the school's CMS/calendar (in production) or seeded in-process (dev/test).
 
@@ -124,7 +141,7 @@ class SchoolEvent:
 
 ---
 
-## 5. Why this is research-driven, not arbitrary
+## 6. Why this is research-driven, not arbitrary
 
 | Design choice | Source |
 |---|---|
@@ -136,7 +153,7 @@ class SchoolEvent:
 
 ---
 
-## 6. Trade-offs (10-persona filter)
+## 7. Trade-offs (10-persona filter)
 
 | Persona | Verdict |
 |---|---|
@@ -153,7 +170,7 @@ class SchoolEvent:
 
 ---
 
-## 7. Open questions / future DFS
+## 8. Open questions / future DFS
 
 1. **Caller-response-aware state advancement.** Today, the state machine advances on every agent turn after intent_satisfied. A more sophisticated rule could *skip* the news offer when the caller's response to the pivot was clearly engaged (e.g. they gave a referral with a name) — to avoid "you've already given me something, now here's another ask". Requires sentiment + content classification.
 2. **Tenant-level news priority overrides.** A school might want to suppress lower-priority events for fee-overdue parents. Add a per-scenario news-filter callable.

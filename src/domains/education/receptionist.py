@@ -53,20 +53,33 @@ class EducationReceptionist(BaseReceptionist):
         self._scenarios: Dict[str, Optional[Any]] = {}
         # Post-intent state machine (Voice Intent Framework, ADR-014).
         #
-        #   _intent_satisfied : True after first caller utterance matching
-        #                       scenario.success_signals — primary objective
-        #                       confirmed received.
-        #   _pivot_offered    : True after the pivot has been injected into
-        #                       a prompt (one-shot, prevents repeat).
-        #   _news_offered     : True after the news offer has been injected
-        #                       into a prompt (one-shot).
+        #   _intent_satisfied  : True after first caller utterance matching
+        #                        scenario.success_signals — primary objective
+        #                        confirmed received.
+        #   _parent_lingering  : Per-turn: True if THIS turn's caller text
+        #                        invites continuation (explicit invitation
+        #                        like "anything else", a question, "by the
+        #                        way…"). Re-evaluated on every caller turn;
+        #                        not sticky across turns.
+        #   _pivot_offered     : True after the pivot has been injected into
+        #                        a prompt (one-shot, prevents repeat).
+        #   _news_offered      : True after the news offer has been injected
+        #                        into a prompt (one-shot).
         #
-        # Sequencing across consecutive agent turns:
-        #   intent_satisfied + pivot configured + !pivot_offered → inject pivot
-        #   intent_satisfied + (no pivot OR pivot_offered) +
-        #     news_offer configured + !news_offered → inject news_offer
-        #   else → normal turn (LLM closes naturally based on prompt)
+        # GATING (user directive 2026-04-30): post-intent offers only fire
+        # when the parent has SIGNALLED they want to continue. Default after
+        # intent satisfaction is to close warmly. Pushing pivot/news on a
+        # parent who said "thank you, bye" is disrespectful.
+        #
+        # Sequencing per turn:
+        #   intent_satisfied + parent_lingering THIS TURN +
+        #     pivot configured + !pivot_offered → inject pivot
+        #   intent_satisfied + parent_lingering THIS TURN +
+        #     (no pivot OR pivot_offered) + news configured +
+        #     !news_offered → inject news_offer
+        #   else → normal turn; LLM closes via scenario.closing_line
         self._intent_satisfied: Dict[str, bool] = {}
+        self._parent_lingering: Dict[str, bool] = {}
         self._pivot_offered: Dict[str, bool] = {}
         self._news_offered: Dict[str, bool] = {}
 
@@ -102,6 +115,7 @@ class EducationReceptionist(BaseReceptionist):
 
         # Reset post-intent state machine for this session.
         self._intent_satisfied[session_id] = False
+        self._parent_lingering[session_id] = False
         self._pivot_offered[session_id] = False
         self._news_offered[session_id] = False
 
@@ -154,22 +168,92 @@ class EducationReceptionist(BaseReceptionist):
         )
 
     # ------------------------------------------------------------------
-    # Override: handle_transcript — detect intent satisfaction first,
-    # then delegate to the base class for the LLM round-trip.
+    # Lingering-signal detection
+    # ------------------------------------------------------------------
+
+    # Phrases that explicitly invite continuation. Lower-cased substring
+    # match — a single hit flips _parent_lingering=True for this turn.
+    _LINGER_INVITATIONS = (
+        "anything else",
+        "what else",
+        "is there more",
+        "is there anything",
+        "by the way",
+        "actually",
+        "also",
+        "one more thing",
+        "any other",
+        "tell me more",
+        "what's happening",
+        "anything happening",
+        "any news",
+    )
+    # Phrases that explicitly close the door — even alongside a question
+    # mark, treat as wrap-up. Catches "okay bye?", "is that all then?"
+    _LINGER_WRAPUPS = (
+        "bye",
+        "goodbye",
+        "good bye",
+        "that's all",
+        "thats all",
+        "nothing else",
+        "no thanks",
+        "no thank you",
+        "i'll go",
+        "have to go",
+        "i'm leaving",
+        "talk later",
+    )
+
+    @classmethod
+    def _is_lingering_signal(cls, caller_text: str) -> bool:
+        """
+        Decide whether the parent's latest utterance signals interest in
+        continuing the call past primary-intent satisfaction. Returns
+        True only on EXPLICIT invitation or a non-trivial question;
+        defaults to False (the user-respectful default).
+        """
+        if not caller_text:
+            return False
+        text = caller_text.lower()
+
+        # Wrap-ups always win — even if combined with an invitation.
+        if any(w in text for w in cls._LINGER_WRAPUPS):
+            return False
+
+        # Explicit invitations.
+        if any(inv in text for inv in cls._LINGER_INVITATIONS):
+            return True
+
+        # A question (longer than a trivial "huh?"). The 4-word floor
+        # filters fragments like "what?" or "really?" which are
+        # back-channels, not invitations.
+        words = text.split()
+        if "?" in caller_text and len(words) >= 4:
+            return True
+
+        return False
+
+    # ------------------------------------------------------------------
+    # Override: handle_transcript — detect intent satisfaction +
+    # lingering signal, then delegate to the base class.
     # ------------------------------------------------------------------
 
     async def handle_transcript(
         self, session_id: str, transcript: str
     ) -> str:
         scenario = self._scenarios.get(session_id)
-        if (
-            scenario is not None
-            and not self._intent_satisfied.get(session_id, False)
-            and transcript
-        ):
+        if scenario is not None and transcript:
             text_lower = transcript.lower()
-            if any(sig in text_lower for sig in scenario.success_signals):
-                self._intent_satisfied[session_id] = True
+            # Detect intent satisfaction (one-shot, sticky).
+            if not self._intent_satisfied.get(session_id, False):
+                if any(sig in text_lower for sig in scenario.success_signals):
+                    self._intent_satisfied[session_id] = True
+            # Detect lingering signal (re-evaluated each turn).
+            self._parent_lingering[session_id] = self._is_lingering_signal(transcript)
+        else:
+            # Reset lingering on empty transcript / no scenario.
+            self._parent_lingering[session_id] = False
         return await super().handle_transcript(session_id, transcript)
 
     # ------------------------------------------------------------------
@@ -187,10 +271,12 @@ class EducationReceptionist(BaseReceptionist):
         scenario = self._scenarios.get(session.session_id)
         merged_context: Dict[str, Any] = dict(context or {})
 
-        # Decide whether THIS turn should carry a post-intent hint —
-        # pivot first (if configured), then news_offer (if configured).
-        # At most one fires per turn so we never burden the parent with
-        # two questions at once. State flags advance one-shot.
+        # Decide whether THIS turn should carry a post-intent hint.
+        # GATING (user directive 2026-04-30): only fire if the parent
+        # has signalled interest in continuing this turn. Default after
+        # intent satisfaction is to close warmly — the LLM does that
+        # naturally from the scenario's posture + closing_line. We do
+        # NOT push pivot/news on a parent who said "thank you, bye".
         pivot_hint = ""
         news_offer_hint = ""
         news_block = ""
@@ -198,6 +284,7 @@ class EducationReceptionist(BaseReceptionist):
         if (
             scenario is not None
             and self._intent_satisfied.get(session.session_id, False)
+            and self._parent_lingering.get(session.session_id, False)
             and record is not None
         ):
             pivot_configured = scenario.post_intent_pivot is not None
@@ -256,6 +343,7 @@ class EducationReceptionist(BaseReceptionist):
         self._parent_records.pop(session_id, None)
         self._scenarios.pop(session_id, None)
         self._intent_satisfied.pop(session_id, None)
+        self._parent_lingering.pop(session_id, None)
         self._pivot_offered.pop(session_id, None)
         self._news_offered.pop(session_id, None)
         return await super().handle_call_end(session_id)
