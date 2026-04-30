@@ -135,6 +135,11 @@ _WRAPUP_KEYWORDS_DETAILS: tuple[str, ...] = (
     "alright", "noted", "got it", "i see",
 )
 
+# Backchannel injection: when the caller's last turn was substantive
+# (≥ this many words), prepend a brief acknowledgment to the next
+# cached reply so the parent feels heard.
+_BACKCHANNEL_TRIGGER_WORDS = 5
+
 
 # ---------------------------------------------------------------------------
 # Production Pipeline Orchestrator (Streaming)
@@ -214,6 +219,12 @@ class ProductionPipeline:
         #   done               → no further cached responses; LLM only
         self._stage: Dict[str, str] = {}
         self._cached_audio: Dict[str, Dict[str, bytes]] = {}
+        # Track the parent's most recent transcript word count so the
+        # backchannel injection (Mhmm-andi prefix on cached replies) can
+        # decide whether the parent was "passing information" — i.e. a
+        # turn long enough that an acknowledgment improves the felt
+        # experience of being heard (user directive 2026-04-30).
+        self._last_caller_words: Dict[str, int] = {}
 
         # Barge-in timing state
         self._tts_start_time: Dict[str, float] = {}   # When TTS started sending
@@ -387,6 +398,7 @@ class ProductionPipeline:
         self._session_budget_floor.pop(session_id, None)
         self._stage.pop(session_id, None)
         self._cached_audio.pop(session_id, None)
+        self._last_caller_words.pop(session_id, None)
 
         # Cancel any in-flight TTS
         task = self._tts_tasks.pop(session_id, None)
@@ -453,6 +465,12 @@ class ProductionPipeline:
             # Adaptive turn-length: feed each caller turn's word count
             # into the per-session history and re-derive the budget.
             self._adapt_turn_budget(session_id, event.text)
+            # Backchannel decision input: track the most recent caller
+            # turn length so _dispatch_cached can decide whether to
+            # prepend an acknowledgment.
+            self._last_caller_words[session_id] = len(
+                (event.text or "").split()
+            )
 
         # Trigger processing on speech_final or utterance_end
         if event.speech_final:
@@ -897,11 +915,18 @@ class ProductionPipeline:
                     text_len=len(summary_text),
                 )
 
-        # Now synthesise details + closing in parallel — they're both
-        # needed later, no priority between them.
+        # Pick a backchannel that matches the parent's language register.
+        is_telugu = (
+            (record.language_preference or "").strip().lower() == "telugu"
+        )
+        backchannel_text = "Mhmm, andi." if is_telugu else "Mm-hmm."
+
+        # Now synthesise details + closing + backchannel in parallel —
+        # all three are needed later in the call.
         rest = await asyncio.gather(
             _synth("details", details_text),
             _synth("closing", closing_text),
+            _synth("backchannel", backchannel_text),
         )
         for key, audio in rest:
             if audio:
@@ -990,13 +1015,40 @@ class ProductionPipeline:
         return False
 
     def _dispatch_cached(self, session_id: str, audio: bytes) -> None:
-        """Send pre-synthesised audio via the existing tracked-send path."""
+        """
+        Send pre-synthesised audio via the existing tracked-send path.
+
+        Prepends a "Mhmm, andi." backchannel when the parent's last
+        turn was substantive (≥_BACKCHANNEL_TRIGGER_WORDS words) — so
+        a parent who just explained something hears acknowledgment
+        before the agent's prepared reply, rather than feeling that
+        their words were ignored.
+        """
         send_cb = self._send_callbacks.get(session_id)
         if not send_cb:
             return
         self._is_speaking[session_id] = True
         self._tts_start_time[session_id] = time.time()
         self._is_processing[session_id] = False  # cached path bypasses LLM
+
+        # Backchannel injection — μ-law audio concatenates trivially
+        # (each byte is one 8 kHz sample) so we just prepend the
+        # backchannel bytes to the scenario audio bytes.
+        last_words = self._last_caller_words.get(session_id, 0)
+        cache = self._cached_audio.get(session_id, {})
+        backchannel = cache.get("backchannel")
+        if (
+            backchannel
+            and last_words >= _BACKCHANNEL_TRIGGER_WORDS
+        ):
+            audio = backchannel + audio
+            logger.info(
+                "backchannel_prepended",
+                session_id=session_id,
+                last_caller_words=last_words,
+                backchannel_bytes=len(backchannel),
+            )
+
         task = asyncio.create_task(
             self._send_with_tracking(session_id, audio)
         )

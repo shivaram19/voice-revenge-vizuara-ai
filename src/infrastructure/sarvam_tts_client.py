@@ -53,11 +53,22 @@ import requests
 
 _DEFAULT_ENDPOINT = "https://api.sarvam.ai/text-to-speech"
 _DEFAULT_MODEL = "bulbul:v3"
-# Default speaker for Telugu calls. "gokul" is a warm male voice in v3
-# per the Bulbul speaker list; tenants can override via env or constructor.
-_DEFAULT_SPEAKER = "gokul"
+# Default speaker for Telugu calls. School-staff calls in Telangana
+# culturally default to a warm female voice (admin/office staff), so
+# "priya" is the v3 default — a common, warm pan-Indian female voice.
+# Override via SARVAM_TELUGU_SPEAKER env var or the constructor kwarg.
+# Speaker roster: see module docstring.
+_DEFAULT_SPEAKER = "priya"
 _DEFAULT_SAMPLE_RATE = 24000
 _DEFAULT_TIMEOUT_S = 30
+# Pace: slightly slower than 1.0 so the Telugu code-mix lands cleanly
+# on the Suryapet parent's ear (DFS-007 patience profile — Telangana
+# parents prefer dignified, unhurried delivery on phone calls).
+_DEFAULT_PACE = 0.95
+# Temperature: slight expressiveness bump from Sarvam's 0.6 default,
+# without losing consistency. 0.7 gives natural variation in pitch
+# contour without prosodic drift.
+_DEFAULT_TEMPERATURE = 0.7
 
 
 class SarvamTTSClient:
@@ -94,8 +105,8 @@ class SarvamTTSClient:
         target_language_code: str = "te-IN",
         speaker: str = _DEFAULT_SPEAKER,
         speech_sample_rate: int = _DEFAULT_SAMPLE_RATE,
-        pace: float = 1.0,
-        temperature: float = 0.6,
+        pace: float = _DEFAULT_PACE,
+        temperature: float = _DEFAULT_TEMPERATURE,
         endpoint: str = _DEFAULT_ENDPOINT,
         timeout_s: int = _DEFAULT_TIMEOUT_S,
     ) -> None:
