@@ -20,9 +20,9 @@ def _opening(record: ParentRecord) -> str:
     is_telugu = (record.language_preference or "").strip().lower() == "telugu"
     if is_telugu:
         return (
-            f"{record.child_name} gurinchi call chesthunna, Garu. "
-            f"Konni rojulu ga school ki raavatam ledu. "
-            "Intlo anni alright na, Garu?"
+            f"{record.parent_name} garu, {record.child_name} gurinchi "
+            f"oka chinna question andi. Konni rojulu ga school ki "
+            "raavatam ledu. Intlo anni alright na andi?"
         )
     return (
         f"Calling about {record.child_name}, sir. "
@@ -36,9 +36,9 @@ def _closing(record: ParentRecord) -> str:
     is_telugu = (record.language_preference or "").strip().lower() == "telugu"
     if is_telugu:
         return (
-            f"Dhanyavaadalu, Garu. {record.child_name} ni school lo "
-            f"chudali ani anukunta. Em help kaavalsina, office ki call "
-            f"cheyyandi. Have a peaceful day."
+            f"Dhanyavaadalu andi. {record.child_name} ni school lo "
+            f"chudali ani anukuntunnam. Em help kaavalsina, office ki "
+            f"call cheyyandi. Have a peaceful day."
         )
     return (
         f"Thank you {voc}. We hope to see {record.child_name} back soon. "

@@ -22,9 +22,10 @@ def _opening(record: ParentRecord) -> str:
 
     if is_telugu:
         return (
-            f"{record.child_name} school fees gurinchi call chesthunna, Garu. "
+            f"{record.parent_name} garu, {record.child_name} school fees "
+            f"gurinchi maatladaaniki call chesam, andi. "
             f"{record.term_label} ki {total} due undi, "
-            f"{record.fee_due_date} ki. Em question undha, Garu?"
+            f"{record.fee_due_date} ki. Em question unda andi?"
         )
 
     return (
@@ -38,7 +39,10 @@ def _closing(record: ParentRecord) -> str:
     voc = vocative(record)
     is_telugu = (record.language_preference or "").strip().lower() == "telugu"
     if is_telugu:
-        return f"Dhanyavaadalu, Garu. Office vaaru follow up chestaaru. Have a peaceful day."
+        return (
+            f"Dhanyavaadalu andi. Office vaaru follow up chestaaru. "
+            f"Have a peaceful day."
+        )
     return (
         f"Thank you {voc}. The office will follow up if needed. "
         f"Have a peaceful day, {voc}."

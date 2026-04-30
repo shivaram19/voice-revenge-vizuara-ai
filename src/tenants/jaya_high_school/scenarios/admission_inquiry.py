@@ -19,8 +19,9 @@ def _opening(record: ParentRecord) -> str:
     is_telugu = (record.language_preference or "").strip().lower() == "telugu"
     if is_telugu:
         return (
-            f"{record.child_name} admission gurinchi call chesthunna, Garu. "
-            f"Mee inquiry pi update share cheyalsi undi. Cheppanaa?"
+            f"{record.parent_name} garu, {record.child_name} admission "
+            f"gurinchi update share cheyyadaniki call chesam, andi. "
+            f"Cheppanaa andi?"
         )
     return (
         f"Calling about {record.child_name}'s admission inquiry, sir. "
@@ -33,7 +34,7 @@ def _closing(record: ParentRecord) -> str:
     is_telugu = (record.language_preference or "").strip().lower() == "telugu"
     if is_telugu:
         return (
-            f"Dhanyavaadalu Jaya High School consider chesinanduku, Garu. "
+            f"Dhanyavaadalu andi, Jaya High School consider chesinanduku. "
             f"Mee child shine avvali. Have a peaceful day."
         )
     return (

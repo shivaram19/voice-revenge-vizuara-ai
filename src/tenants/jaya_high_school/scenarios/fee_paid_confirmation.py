@@ -26,10 +26,16 @@ def _opening(record: ParentRecord) -> str:
 
     if is_telugu:
         on_date = f" {last.date} na" if last else ""
+        # Natural Telangana register per user feedback (2026-04-30):
+        # use "X ayipoyindhi ani clarify cheyyadaniki call chesam, andi"
+        # — past-tense "we called", "andi" politeness particle alternated
+        # with "{name} garu" address. Avoids the textbook-formal feel of
+        # "gurinchi call chesthunna" + repeated "Garu".
         return (
-            f"{record.child_name} school fees gurinchi call chesthunna, Garu. "
-            f"Term fee {paid_str} fully paid ayyindi{on_date}. "
-            "Dhanyavaadalu, mee prompt payment ki."
+            f"{record.parent_name} garu, {record.child_name} school fees "
+            f"ayipoyindhi ani clarify cheyyadaniki call chesam, andi. "
+            f"Term fee {paid_str},{on_date} fully paid ayyindi. "
+            f"Dhanyavaadalu mee prompt payment ki, andi."
         )
 
     on_date = f" on {last.date}" if last else ""
@@ -44,7 +50,7 @@ def _closing(record: ParentRecord) -> str:
     voc = vocative(record)
     is_telugu = (record.language_preference or "").strip().lower() == "telugu"
     if is_telugu:
-        return f"Manchidi, {voc}. Have a peaceful day."
+        return f"Manchidi andi. Have a peaceful day."
     return f"{thanks(record)}, {voc}. Have a peaceful day, {voc}."
 
 
