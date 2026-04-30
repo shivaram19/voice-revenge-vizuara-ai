@@ -107,6 +107,7 @@ class SarvamTTSClient:
         speech_sample_rate: int = _DEFAULT_SAMPLE_RATE,
         pace: float = _DEFAULT_PACE,
         temperature: float = _DEFAULT_TEMPERATURE,
+        dict_id: Optional[str] = None,
         endpoint: str = _DEFAULT_ENDPOINT,
         timeout_s: int = _DEFAULT_TIMEOUT_S,
     ) -> None:
@@ -116,6 +117,12 @@ class SarvamTTSClient:
         self.speech_sample_rate = int(speech_sample_rate)
         self.pace = float(pace)
         self.temperature = float(temperature)
+        # Pronunciation dictionary ID — Bulbul v3 only. When set, matching
+        # words in the input text are replaced with custom pronunciations
+        # before synthesis. Useful for fixing proper-noun mispronunciations
+        # (Aarav, Suryapet, etc.). Dictionaries must be registered separately
+        # via the Sarvam Pronunciation Dictionary API or dashboard.
+        self.dict_id = (dict_id or "").strip() or None
         self.endpoint = endpoint
         self.timeout_s = int(timeout_s)
 
@@ -130,6 +137,7 @@ class SarvamTTSClient:
         text: str,
         model: Optional[str] = None,  # noqa: ARG002 (interface parity)
         ssml: bool = False,           # noqa: ARG002 (Bulbul v3 ignores)
+        pace: Optional[float] = None,  # per-call override (Communication Accommodation)
     ) -> bytes:
         """
         Synthesize `text` to a single WAV byte-string.
@@ -145,16 +153,19 @@ class SarvamTTSClient:
             "api-subscription-key": self.api_key,
             "Content-Type": "application/json",
         }
+        effective_pace = float(pace) if pace is not None else self.pace
         body = {
             "text": text,
             "target_language_code": self.target_language_code,
             "model": _DEFAULT_MODEL,
             "speaker": self.speaker,
             "speech_sample_rate": str(self.speech_sample_rate),
-            "pace": self.pace,
+            "pace": effective_pace,
             "temperature": self.temperature,
             "output_audio_codec": "wav",
         }
+        if self.dict_id:
+            body["dict_id"] = self.dict_id
 
         resp = requests.post(
             self.endpoint,

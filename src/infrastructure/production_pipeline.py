@@ -154,6 +154,16 @@ _BACKCHANNEL_TRIGGER_WORDS = 5
 # than waiting indefinitely.
 _AUTO_CLOSE_SILENCE_MS = _env_int("AUTO_CLOSE_SILENCE_MS", 3000)
 
+# Pace-match bounds for Bulbul (clip computed pace into a safe band).
+# Bulbul v3 accepts 0.5-2.0; we keep our adaptive range narrow so that
+# slow / fast speakers still feel within school-staff register.
+_PACE_FLOOR = 0.85
+_PACE_CEILING = 1.15
+# Reference Indian-English / Telugu speaking rate baseline. ≈140 wpm
+# = 2.33 wps (Stivers 2009 turn-taking universals); we map this to
+# pace 1.0. Slower → < 1.0; faster → > 1.0.
+_REFERENCE_WORDS_PER_SEC = 2.33
+
 
 # ---------------------------------------------------------------------------
 # Production Pipeline Orchestrator (Streaming)
@@ -244,6 +254,12 @@ class ProductionPipeline:
         # if the parent says nothing for AUTO_CLOSE_SILENCE_MS, the
         # agent auto-dispatches the closing and ends the call.
         self._auto_close_tasks: Dict[str, asyncio.Task] = {}
+        # Per-call pace adaptation (Communication Accommodation Theory
+        # Giles 1991, applied to TTS speed). Track caller words/sec
+        # across utterances; derive a session-level pace used as a
+        # per-call kwarg into the Sarvam Bulbul adapter.
+        self._caller_speech_rates: Dict[str, list[float]] = {}
+        self._session_pace: Dict[str, float] = {}
 
         # Barge-in timing state
         self._tts_start_time: Dict[str, float] = {}   # When TTS started sending
@@ -418,6 +434,8 @@ class ProductionPipeline:
         self._stage.pop(session_id, None)
         self._cached_audio.pop(session_id, None)
         self._last_caller_words.pop(session_id, None)
+        self._caller_speech_rates.pop(session_id, None)
+        self._session_pace.pop(session_id, None)
         # Cancel any pending auto-close task.
         self._cancel_auto_close(session_id)
 
@@ -492,6 +510,9 @@ class ProductionPipeline:
             self._last_caller_words[session_id] = len(
                 (event.text or "").split()
             )
+            # Pace-match input: compute caller words/sec from Deepgram
+            # word-level timestamps; feed into session pace estimator.
+            self._adapt_session_pace(session_id, event.words or [])
 
         # Trigger processing on speech_final or utterance_end
         if event.speech_final:
@@ -878,6 +899,59 @@ class ProductionPipeline:
             )
 
     # ------------------------------------------------------------------
+    # Pace-match (Communication Accommodation, applied to TTS pace)
+    # ------------------------------------------------------------------
+
+    def _adapt_session_pace(
+        self, session_id: str, words: list
+    ) -> None:
+        """
+        Derive a Bulbul-friendly `pace` value from the caller's recent
+        speech rate. Each caller turn's words/sec is rolled into a
+        bounded average; the resulting session pace is forwarded to
+        SarvamTTSClient as a per-call kwarg.
+
+        words: Deepgram word-level entries with `start`/`end` floats
+        (seconds). When timing isn't available we just skip the update.
+        """
+        if not words or len(words) < 2:
+            return
+        try:
+            first = words[0]
+            last = words[-1]
+            t0 = float(first.get("start", 0.0))
+            t1 = float(last.get("end", 0.0))
+            duration = max(t1 - t0, 0.001)
+        except (TypeError, ValueError, AttributeError):
+            return
+        wps = len(words) / duration
+        # Drop unreasonable values (mis-timestamped chunks).
+        if wps <= 0.5 or wps >= 8.0:
+            return
+
+        history = self._caller_speech_rates.setdefault(session_id, [])
+        history.append(wps)
+        # Average the last 3 turns to smooth single-turn jitter.
+        recent = history[-3:]
+        avg_wps = sum(recent) / len(recent)
+        # Map: pace = 1.0 + (avg_wps - reference) * 0.15. Sensitivity
+        # 0.15 keeps us inside [0.85, 1.15] for plausible Indian-English
+        # speakers (1.5–4 wps).
+        raw_pace = 1.0 + (avg_wps - _REFERENCE_WORDS_PER_SEC) * 0.15
+        new_pace = max(_PACE_FLOOR, min(_PACE_CEILING, round(raw_pace, 2)))
+        prev = self._session_pace.get(session_id)
+        self._session_pace[session_id] = new_pace
+        if prev is None or abs(prev - new_pace) >= 0.02:
+            logger.info(
+                "session_pace_adapted",
+                session_id=session_id,
+                caller_wps=round(wps, 2),
+                avg_wps_recent=round(avg_wps, 2),
+                pace=new_pace,
+                previous_pace=prev,
+            )
+
+    # ------------------------------------------------------------------
     # Cached scenario flow (ADR-019-bis — cached intentional calls)
     # ------------------------------------------------------------------
 
@@ -1249,6 +1323,14 @@ class ProductionPipeline:
                 except Exception:
                     lang_pref = ""
 
+        # Per-call pace from caller-speech-rate adaptation (Communication
+        # Accommodation). Only applied for sessions where Sarvam Bulbul
+        # is the active provider; the router silently drops the kwarg
+        # for adapters that don't accept it.
+        session_pace = (
+            self._session_pace.get(session_id) if session_id is not None else None
+        )
+
         # Run blocking HTTP call in thread pool — critical for asyncio [^PY1].
         # The TTSRouter accepts `lang_pref` and forwards to the right adapter;
         # plain TTS adapters (Deepgram-only deployments) accept the kwarg
@@ -1260,6 +1342,7 @@ class ProductionPipeline:
             model=voice_model,
             ssml=use_ssml,
             lang_pref=lang_pref,
+            pace=session_pace,
         )
 
         wav_buffer = io.BytesIO(pcm_24k)

@@ -84,17 +84,23 @@ class TTSRouter:
         model: Optional[str] = None,
         ssml: bool = False,
         lang_pref: str = "",
+        pace: Optional[float] = None,
     ) -> bytes:
         """
-        Route the synthesise call. The `lang_pref` kwarg is the only
-        addition over the per-adapter contract. The default adapter
-        receives `model` and `ssml`; specialty adapters typically
-        ignore them.
+        Route the synthesise call. The `lang_pref` kwarg is the
+        addition over the per-adapter contract. `pace` is a per-call
+        override forwarded only to adapters that accept it (Sarvam
+        Bulbul); plain adapters like Deepgram ignore it.
         """
         provider = self._routes.get((lang_pref or "").strip().lower())
         if provider is None:
             return self.default.synthesize(text, model=model, ssml=ssml)
-        return provider.synthesize(text, model=model, ssml=ssml)
+        # Inspect provider signature: only Sarvam currently accepts pace.
+        try:
+            return provider.synthesize(text, model=model, ssml=ssml, pace=pace)
+        except TypeError:
+            # Provider doesn't accept pace; fall back to standard call.
+            return provider.synthesize(text, model=model, ssml=ssml)
 
     def routes_summary(self) -> Dict[str, str]:
         """For observability / logs at lifespan startup."""

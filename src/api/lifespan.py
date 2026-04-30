@@ -115,15 +115,31 @@ async def lifespan(app: FastAPI):
         sarvam_tts = None
         if sarvam_key:
             try:
-                from src.infrastructure.sarvam_tts_client import SarvamTTSClient
+                from src.infrastructure.sarvam_tts_client import (
+                    SarvamTTSClient,
+                    _DEFAULT_PACE,
+                    _DEFAULT_TEMPERATURE,
+                )
+                speaker = os.getenv("SARVAM_TELUGU_SPEAKER", "kavitha")
+                pace = float(os.getenv("SARVAM_PACE", str(_DEFAULT_PACE)))
+                temperature = float(
+                    os.getenv("SARVAM_TEMPERATURE", str(_DEFAULT_TEMPERATURE))
+                )
+                dict_id = os.getenv("SARVAM_DICT_ID", "").strip() or None
                 sarvam_tts = SarvamTTSClient(
                     api_key=sarvam_key,
                     target_language_code="te-IN",
-                    speaker=os.getenv("SARVAM_TELUGU_SPEAKER", "gokul"),
+                    speaker=speaker,
+                    pace=pace,
+                    temperature=temperature,
+                    dict_id=dict_id,
                 )
                 logger.info(
                     "sarvam_tts_configured",
-                    speaker=os.getenv("SARVAM_TELUGU_SPEAKER", "gokul"),
+                    speaker=speaker,
+                    pace=pace,
+                    temperature=temperature,
+                    dict_id=dict_id or "(none)",
                     target_language="te-IN",
                 )
             except Exception as exc:  # adapter init failure → fall through
