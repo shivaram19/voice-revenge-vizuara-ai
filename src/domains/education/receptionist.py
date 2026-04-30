@@ -151,17 +151,29 @@ class EducationReceptionist(BaseReceptionist):
         to use 'Garu' for Telugu-preference parents, 'sir' for English.
         """
         short_name = self.config.company_name.split(",")[0].strip()
-        # Local import to avoid coupling the generic education domain
-        # to a specific tenant's helper. Acceptable here because the
-        # honorific concept is pan-Indian; future tenants can supply
-        # their own helper if regional differences emerge.
-        from src.tenants.jaya_high_school.honorifics import greeting_word, vocative
+        from src.tenants.jaya_high_school.honorifics import (
+            address,
+            greeting_word,
+            vocative,
+        )
 
-        addr = vocative(record) if record is not None else "sir"
-        greet = greeting_word(record) if record is not None else "Namaste"
+        if record is None:
+            return (
+                f"Namaste sir. Calling from {short_name}. "
+                "Is this a good time to talk, sir?"
+            )
+
+        greet = greeting_word(record)
+        voc = vocative(record)
+        # Telugu-pref greeting carries the parent's full name + Garu —
+        # the culturally-respectful form ("Namaskaaram Mr. Shiv Ram Garu").
+        # English-pref keeps the minimal form (parent name belongs in
+        # the scenario opening, per the prior compaction directive).
+        is_telugu = (record.language_preference or "").strip().lower() == "telugu"
+        opening_addr = address(record) if is_telugu else voc
         return (
-            f"{greet} {addr}. Calling from {short_name}. "
-            f"Is this a good time to talk, {addr}?"
+            f"{greet} {opening_addr}. Calling from {short_name}. "
+            f"Is this a good time to talk, {voc}?"
         )
 
     # ------------------------------------------------------------------

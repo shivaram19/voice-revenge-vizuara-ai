@@ -43,7 +43,7 @@ JAYA_PARENT_RECORDS: List[ParentRecord] = [
                 reference="TXN-2026041000942",
             ),
         ],
-        language_preference="English",
+        language_preference="Telugu",
         notes=(
             "Aarav scored 92% in last term exams. "
             "Active member of the robotics club. "
