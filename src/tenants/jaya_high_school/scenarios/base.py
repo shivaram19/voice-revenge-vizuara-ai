@@ -53,6 +53,13 @@ class Scenario:
         "goodbye",
     )
     post_intent_pivot: Optional[Callable[[ParentRecord], str]] = None
+    # The post-intent NEWS OFFER is a generic "anything else happening at
+    # school you'd like to know about?" follow-up. It fires after the
+    # pivot (if any) and gives the parent a graceful broader doorway
+    # before the call closes. Disabled (None) for sensitive scenarios
+    # where ANY additional ask would be unwelcome (e.g.
+    # attendance_followup, fee_overdue_inquiry).
+    post_intent_news_offer: Optional[Callable[[ParentRecord], str]] = None
 
     def render_opening(self, record: ParentRecord) -> str:
         return self.opening_line(record)
@@ -65,6 +72,12 @@ class Scenario:
         if self.post_intent_pivot is None:
             return ""
         return self.post_intent_pivot(record)
+
+    def render_news_offer(self, record: ParentRecord) -> str:
+        """Return the news-offer text, or "" if not configured."""
+        if self.post_intent_news_offer is None:
+            return ""
+        return self.post_intent_news_offer(record)
 
 
 def pick_scenario(record: Optional[ParentRecord]) -> Optional[Scenario]:

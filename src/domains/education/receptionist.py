@@ -51,12 +51,24 @@ class EducationReceptionist(BaseReceptionist):
 
         self._parent_records: Dict[str, Optional[ParentRecord]] = {}
         self._scenarios: Dict[str, Optional[Any]] = {}
-        # Post-intent pivot bookkeeping. `_intent_satisfied` flips True
-        # the first time a caller utterance matches the active scenario's
-        # success_signals. `_pivot_offered` flips True the first time we
-        # inject the pivot hint into a prompt — preventing a second offer.
+        # Post-intent state machine (Voice Intent Framework, ADR-014).
+        #
+        #   _intent_satisfied : True after first caller utterance matching
+        #                       scenario.success_signals — primary objective
+        #                       confirmed received.
+        #   _pivot_offered    : True after the pivot has been injected into
+        #                       a prompt (one-shot, prevents repeat).
+        #   _news_offered     : True after the news offer has been injected
+        #                       into a prompt (one-shot).
+        #
+        # Sequencing across consecutive agent turns:
+        #   intent_satisfied + pivot configured + !pivot_offered → inject pivot
+        #   intent_satisfied + (no pivot OR pivot_offered) +
+        #     news_offer configured + !news_offered → inject news_offer
+        #   else → normal turn (LLM closes naturally based on prompt)
         self._intent_satisfied: Dict[str, bool] = {}
         self._pivot_offered: Dict[str, bool] = {}
+        self._news_offered: Dict[str, bool] = {}
 
     # ------------------------------------------------------------------
     # Override: handle_call_start — resolve parent + scenario, then greet.
@@ -88,9 +100,10 @@ class EducationReceptionist(BaseReceptionist):
         self.sessions[session_id] = session
         self._emotion_machines[session_id] = EmotionStateMachine()
 
-        # Reset pivot bookkeeping for this session.
+        # Reset post-intent state machine for this session.
         self._intent_satisfied[session_id] = False
         self._pivot_offered[session_id] = False
+        self._news_offered[session_id] = False
 
         greeting = self._greeting_for(record)
         session.conversation_history.append(
@@ -174,25 +187,55 @@ class EducationReceptionist(BaseReceptionist):
         scenario = self._scenarios.get(session.session_id)
         merged_context: Dict[str, Any] = dict(context or {})
 
-        # Decide whether THIS turn should carry the pivot hint.
+        # Decide whether THIS turn should carry a post-intent hint —
+        # pivot first (if configured), then news_offer (if configured).
+        # At most one fires per turn so we never burden the parent with
+        # two questions at once. State flags advance one-shot.
         pivot_hint = ""
+        news_offer_hint = ""
+        news_block = ""
+
         if (
             scenario is not None
             and self._intent_satisfied.get(session.session_id, False)
-            and not self._pivot_offered.get(session.session_id, False)
             and record is not None
         ):
-            pivot_text = scenario.render_pivot(record)
-            if pivot_text:
-                pivot_hint = pivot_text
-                # Mark before the LLM call so a future _build_messages on
-                # the same turn (e.g. Phase 2 after a tool call) does not
-                # re-inject. The flag is reset only on the next call.
-                self._pivot_offered[session.session_id] = True
+            pivot_configured = scenario.post_intent_pivot is not None
+            news_configured = scenario.post_intent_news_offer is not None
+            already_pivoted = self._pivot_offered.get(session.session_id, False)
+            already_news = self._news_offered.get(session.session_id, False)
+
+            if pivot_configured and not already_pivoted:
+                pivot_text = scenario.render_pivot(record)
+                if pivot_text:
+                    pivot_hint = pivot_text
+                    self._pivot_offered[session.session_id] = True
+            elif (
+                news_configured
+                and not already_news
+                and (not pivot_configured or already_pivoted)
+            ):
+                news_text = scenario.render_news_offer(record)
+                if news_text:
+                    news_offer_hint = news_text
+                    self._news_offered[session.session_id] = True
+                    # Pull the relevant news block from the tenant's
+                    # school_news layer; it scopes to the child's class.
+                    try:
+                        from src.tenants.jaya_high_school.school_news import (
+                            render_news_block,
+                        )
+                        news_block = render_news_block(record.child_class)
+                    except Exception:
+                        news_block = ""
 
         if self._tenant is not None:
             merged_context["parent_block"] = self._tenant.render_prompt_overlay(
-                record, scenario, pivot_hint=pivot_hint
+                record,
+                scenario,
+                pivot_hint=pivot_hint,
+                news_offer_hint=news_offer_hint,
+                news_block=news_block,
             )
         elif record is not None:
             merged_context["parent_block"] = record.to_prompt_block()
@@ -214,6 +257,7 @@ class EducationReceptionist(BaseReceptionist):
         self._scenarios.pop(session_id, None)
         self._intent_satisfied.pop(session_id, None)
         self._pivot_offered.pop(session_id, None)
+        self._news_offered.pop(session_id, None)
         return await super().handle_call_end(session_id)
 
 

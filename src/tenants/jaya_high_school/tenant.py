@@ -60,17 +60,26 @@ class Tenant:
         record: Optional[ParentRecord],
         scenario: Optional[Scenario],
         pivot_hint: str = "",
+        news_offer_hint: str = "",
+        news_block: str = "",
     ) -> str:
         """
-        Compose the scenario posture_note + parent record block + an
-        optional turn-scoped pivot hint into a single overlay the LLM
-        system prompt appends to its base instructions.
+        Compose the scenario posture_note + parent record block + any
+        turn-scoped post-intent hints (pivot OR news offer) into a
+        single overlay for the LLM system prompt.
 
-        ``pivot_hint`` is the post-intent pivot text. When non-empty,
-        a "this turn only" instruction is appended telling the LLM to
-        offer the pivot once and then close based on the parent's
-        response. Caller is responsible for setting it only on the
-        single turn where the pivot should fire.
+        At most ONE of pivot_hint / news_offer_hint should be non-empty
+        for any given turn; the receptionist sequences them across
+        consecutive turns so the parent never gets two questions at once.
+
+        Args:
+            record: verified ParentRecord, or None if not loaded.
+            scenario: the active Scenario for this call.
+            pivot_hint: text of the post-intent pivot to offer this turn.
+            news_offer_hint: text of the news-offer question this turn.
+            news_block: rendered upcoming-events block (only included
+                with news_offer_hint, so the LLM has source material if
+                the parent accepts).
         """
         chunks: List[str] = []
         if scenario is not None:
@@ -94,6 +103,18 @@ class Tenant:
                 "rushed, accept gracefully and close warmly. Do not "
                 "repeat the pivot in any later turn."
             )
+        elif news_offer_hint:
+            chunks.append(
+                "## TURN-SCOPED HINT (apply ONLY to this immediate reply)\n"
+                "The primary call objective is satisfied. Offer this "
+                "broader news question once, in your own natural words:\n"
+                f"\"{news_offer_hint}\"\n"
+                "Keep the question ≤14 words. If the parent says yes, "
+                "share at most TWO upcoming events from the news block "
+                "below in subsequent turns. If they decline, close warmly."
+            )
+            if news_block:
+                chunks.append(news_block)
         return "\n\n".join(chunks)
 
 

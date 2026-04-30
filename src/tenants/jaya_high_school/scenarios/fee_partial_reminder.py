@@ -30,6 +30,19 @@ def _closing(record: ParentRecord) -> str:
     )
 
 
+def _news_offer(record: ParentRecord) -> str:
+    """
+    For partial-payment parents, after the conversation about the
+    balance has wound down respectfully, offer a brief broader
+    follow-up about upcoming events. Strictly OFF-RAMP — do NOT
+    offer this if the parent sounded stressed about money.
+    """
+    return (
+        f"Sir, would you also like to know about anything happening "
+        f"at school in the coming weeks?"
+    )
+
+
 SCENARIO = Scenario(
     scenario_id="fee_partial_reminder",
     objective=(
@@ -52,4 +65,5 @@ SCENARIO = Scenario(
         "- If they say they cannot pay right now, respond with empathy: "
         "'I understand sir. May the office call you back at a better time?'"
     ),
+    post_intent_news_offer=_news_offer,
 )

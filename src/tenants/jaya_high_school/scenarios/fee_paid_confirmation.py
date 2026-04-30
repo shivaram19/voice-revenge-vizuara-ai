@@ -46,6 +46,18 @@ def _pivot(record: ParentRecord) -> str:
     )
 
 
+def _news_offer(record: ParentRecord) -> str:
+    """
+    Generic broader follow-up after the primary intent (and pivot, if
+    any) lands. The agent surfaces 1-2 relevant upcoming events from
+    the school news layer if the parent accepts.
+    """
+    return (
+        f"Sir, would you like to know about anything happening "
+        f"at school in the coming weeks?"
+    )
+
+
 SCENARIO = Scenario(
     scenario_id="fee_paid_confirmation",
     objective=(
@@ -77,4 +89,5 @@ SCENARIO = Scenario(
         "thank you very much",
     ),
     post_intent_pivot=_pivot,
+    post_intent_news_offer=_news_offer,
 )

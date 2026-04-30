@@ -40,6 +40,13 @@ def _pivot(record: ParentRecord) -> str:
     )
 
 
+def _news_offer(record: ParentRecord) -> str:
+    return (
+        f"Sir, would you also like to hear about events happening "
+        f"at school this month?"
+    )
+
+
 SCENARIO = Scenario(
     scenario_id="admission_inquiry",
     objective=(
@@ -76,4 +83,5 @@ SCENARIO = Scenario(
         "goodbye",
     ),
     post_intent_pivot=_pivot,
+    post_intent_news_offer=_news_offer,
 )
