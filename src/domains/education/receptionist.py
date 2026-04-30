@@ -151,29 +151,37 @@ class EducationReceptionist(BaseReceptionist):
         to use 'Garu' for Telugu-preference parents, 'sir' for English.
         """
         short_name = self.config.company_name.split(",")[0].strip()
-        from src.tenants.jaya_high_school.honorifics import (
-            address,
-            greeting_word,
-            vocative,
-        )
 
         if record is None:
+            # No record loaded — generic but still names the topic so
+            # the parent knows why this call is happening.
             return (
-                f"Namaste sir. Calling from {short_name}. "
-                "Is this a good time to talk, sir?"
+                f"Namaste sir. Calling from {short_name} about your "
+                "child's school fees. Is this a good time to talk, sir?"
             )
 
-        greet = greeting_word(record)
-        voc = vocative(record)
-        # Telugu-pref greeting carries the parent's full name + Garu —
-        # the culturally-respectful form ("Namaskaaram Mr. Shiv Ram Garu").
-        # English-pref keeps the minimal form (parent name belongs in
-        # the scenario opening, per the prior compaction directive).
         is_telugu = (record.language_preference or "").strip().lower() == "telugu"
-        opening_addr = address(record) if is_telugu else voc
+
+        if is_telugu:
+            # DFS-011 §2 + user feedback (2026-04-30): Telangana phone
+            # register names the call's intent within the greeting itself,
+            # not after consent. A real Suryapet school admin opens with
+            # name + Garu, then states purpose, then asks consent — in
+            # one breath. Code-mixed Telugu-English (Telugu function
+            # words + English domain nouns: "fees", "school") is the
+            # modal register.
+            return (
+                f"Namaskaaram {record.parent_name} Garu. "
+                f"Nenu {short_name} nundi {record.child_name} fees gurinchi "
+                "maatladuthunna. Maatladaniki time undha, Garu?"
+            )
+
+        # English-pref: intent stated in greeting too (per same user
+        # feedback — context was missing). Aura renders this naturally.
         return (
-            f"{greet} {opening_addr}. Calling from {short_name}. "
-            f"Is this a good time to talk, {voc}?"
+            f"Namaste sir. From {short_name}, calling about "
+            f"{record.child_name}'s school fees. "
+            "Is this a good time to talk, sir?"
         )
 
     # ------------------------------------------------------------------
