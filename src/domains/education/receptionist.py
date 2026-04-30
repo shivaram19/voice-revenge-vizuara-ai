@@ -82,6 +82,10 @@ class EducationReceptionist(BaseReceptionist):
         self._parent_lingering: Dict[str, bool] = {}
         self._pivot_offered: Dict[str, bool] = {}
         self._news_offered: Dict[str, bool] = {}
+        # Mid-call intent switching: when caller shifts topic to a
+        # different registered intent, this flag fires for ONE turn so
+        # the LLM can gracefully acknowledge the topic shift.
+        self._intent_shifted_this_turn: Dict[str, bool] = {}
 
     # ------------------------------------------------------------------
     # Override: handle_call_start — resolve parent + scenario, then greet.
@@ -118,6 +122,7 @@ class EducationReceptionist(BaseReceptionist):
         self._parent_lingering[session_id] = False
         self._pivot_offered[session_id] = False
         self._news_offered[session_id] = False
+        self._intent_shifted_this_turn[session_id] = False
 
         greeting = self._greeting_for(record)
         session.conversation_history.append(
@@ -205,6 +210,56 @@ class EducationReceptionist(BaseReceptionist):
         "talk later",
     )
 
+    # ------------------------------------------------------------------
+    # Mid-call intent switching
+    # ------------------------------------------------------------------
+
+    # When the caller introduces a new topic that maps to a different
+    # registered intent, we re-pick the active scenario for the rest of
+    # the call. The keyword set is deliberately minimal — false-positives
+    # would derail a normal call. Each tuple item must be a substring
+    # match against the lower-cased caller transcript.
+    _INTENT_SHIFT_KEYWORDS: Dict[str, tuple[str, ...]] = {
+        "admission_inquiry": (
+            "admission",
+            "new admission",
+            "enrol",
+            "enroll",
+            "new student",
+            "want to join",
+            "looking for school",
+            "looking for a school",
+            "want to study at",
+        ),
+        "attendance_followup": (
+            "absent",
+            "missed school",
+            "didn't come to school",
+            "did not come to school",
+            "couldn't attend",
+            "could not attend",
+            "not going to school",
+            "skipped school",
+        ),
+    }
+
+    def _detect_intent_shift(
+        self, caller_text: str, current_intent_id: Optional[str]
+    ) -> Optional[str]:
+        """
+        Return the intent_id the caller has shifted into, or None if
+        the current intent still applies.
+        """
+        if not caller_text:
+            return None
+        text = caller_text.lower()
+        for new_intent_id, keywords in self._INTENT_SHIFT_KEYWORDS.items():
+            if new_intent_id == current_intent_id:
+                continue
+            if any(kw in text for kw in keywords):
+                return new_intent_id
+        return None
+
     @classmethod
     def _is_lingering_signal(cls, caller_text: str) -> bool:
         """
@@ -242,17 +297,41 @@ class EducationReceptionist(BaseReceptionist):
     async def handle_transcript(
         self, session_id: str, transcript: str
     ) -> str:
+        # Default: assume no shift this turn.
+        self._intent_shifted_this_turn[session_id] = False
+
         scenario = self._scenarios.get(session_id)
+
+        # Mid-call intent switch detection (ADR-014 §scenario-stickiness):
+        # if the caller introduces a topic that maps to a different
+        # registered intent, swap the scenario for the rest of the call
+        # and reset post-intent flags so the new intent has its own
+        # success/pivot/news state machine.
+        if (
+            transcript
+            and self._tenant is not None
+            and scenario is not None
+        ):
+            new_intent_id = self._detect_intent_shift(transcript, scenario.scenario_id)
+            if new_intent_id and new_intent_id in self._tenant.scenarios:
+                new_scenario = self._tenant.scenarios[new_intent_id]
+                self._scenarios[session_id] = new_scenario
+                self._intent_satisfied[session_id] = False
+                self._pivot_offered[session_id] = False
+                self._news_offered[session_id] = False
+                self._intent_shifted_this_turn[session_id] = True
+                scenario = new_scenario  # use the new one for this turn's checks
+
         if scenario is not None and transcript:
             text_lower = transcript.lower()
-            # Detect intent satisfaction (one-shot, sticky).
+            # Detect intent satisfaction (one-shot, sticky for the
+            # currently-active intent — reset above on a shift).
             if not self._intent_satisfied.get(session_id, False):
                 if any(sig in text_lower for sig in scenario.success_signals):
                     self._intent_satisfied[session_id] = True
             # Detect lingering signal (re-evaluated each turn).
             self._parent_lingering[session_id] = self._is_lingering_signal(transcript)
         else:
-            # Reset lingering on empty transcript / no scenario.
             self._parent_lingering[session_id] = False
         return await super().handle_transcript(session_id, transcript)
 
@@ -316,6 +395,19 @@ class EducationReceptionist(BaseReceptionist):
                     except Exception:
                         news_block = ""
 
+        # Intent-shift hint (one-shot per shift turn): instruct the LLM
+        # to gracefully acknowledge the topic change before engaging
+        # with the new scenario's posture.
+        intent_shift_hint = ""
+        if self._intent_shifted_this_turn.get(session.session_id, False) and scenario is not None:
+            intent_shift_hint = (
+                "The parent has just shifted the topic of the call to "
+                f"'{scenario.scenario_id.replace('_', ' ')}'. In your next "
+                "reply, briefly acknowledge the shift in your own natural "
+                "words (≤8 words, e.g. 'Of course sir, let me help with that'), "
+                "then engage with the new scenario's posture as outlined above."
+            )
+
         if self._tenant is not None:
             merged_context["parent_block"] = self._tenant.render_prompt_overlay(
                 record,
@@ -323,6 +415,7 @@ class EducationReceptionist(BaseReceptionist):
                 pivot_hint=pivot_hint,
                 news_offer_hint=news_offer_hint,
                 news_block=news_block,
+                intent_shift_hint=intent_shift_hint,
             )
         elif record is not None:
             merged_context["parent_block"] = record.to_prompt_block()
@@ -346,7 +439,22 @@ class EducationReceptionist(BaseReceptionist):
         self._parent_lingering.pop(session_id, None)
         self._pivot_offered.pop(session_id, None)
         self._news_offered.pop(session_id, None)
+        self._intent_shifted_this_turn.pop(session_id, None)
         return await super().handle_call_end(session_id)
+
+    # ------------------------------------------------------------------
+    # Public surface for pipeline introspection
+    # ------------------------------------------------------------------
+
+    def session_has_record(self, session_id: str) -> bool:
+        """
+        Whether this session has a verified parent record loaded.
+        The pipeline uses this to choose a higher dynamic-budget floor
+        for no-record sessions (so the agent has room to be informative
+        like "I don't have the latest record here, may I take your
+        child's name?" — a 14-word turn that 6 words cannot fit).
+        """
+        return self._parent_records.get(session_id) is not None
 
 
 # References

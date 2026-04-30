@@ -177,10 +177,13 @@ class ProductionPipeline:
         # Adaptive turn-length state. We track the word count of each
         # caller utterance and converge our reply length onto theirs
         # (Communication Accommodation Theory: Giles 1991 / Pickering &
-        # Garrod 2004). A 4-word caller gets a 4-word agent reply; a
-        # 12-word caller gets up to 12. Floor 4 / ceiling MAX_AGENT_TURN_WORDS.
+        # Garrod 2004). Floor / ceiling clamp applied per session, with
+        # the floor depending on whether a parent record is loaded
+        # (no-record sessions need a higher floor so honest fallback
+        # turns fit).
         self._caller_word_history: Dict[str, list[int]] = {}
         self._dynamic_max_words: Dict[str, int] = {}
+        self._session_budget_floor: Dict[str, int] = {}
 
         # Barge-in timing state
         self._tts_start_time: Dict[str, float] = {}   # When TTS started sending
@@ -234,6 +237,16 @@ class ProductionPipeline:
         self._last_caller_speech_at[session_id] = 0.0
         self._caller_word_history[session_id] = []
         self._dynamic_max_words[session_id] = _MAX_AGENT_TURN_WORDS
+        # Per-session floor: higher when no parent record loaded so the
+        # agent can be informative in honest fallback turns.
+        has_record = (
+            hasattr(receptionist, "session_has_record")
+            and receptionist.session_has_record(session_id)
+        )
+        self._session_budget_floor[session_id] = (
+            self._BUDGET_FLOOR_WITH_RECORD if has_record
+            else self._BUDGET_FLOOR_NO_RECORD
+        )
 
         # Start streaming STT connection — patience knobs are env-driven
         # per ADR-013/DFS-007. Suryapet defaults: endpointing 400 ms,
@@ -316,6 +329,7 @@ class ProductionPipeline:
         self._last_caller_speech_at.pop(session_id, None)
         self._caller_word_history.pop(session_id, None)
         self._dynamic_max_words.pop(session_id, None)
+        self._session_budget_floor.pop(session_id, None)
 
         # Cancel any in-flight TTS
         task = self._tts_tasks.pop(session_id, None)
@@ -688,12 +702,17 @@ class ProductionPipeline:
         except Exception as exc:
             logger.warning("filler_failed", session_id=session_id, error=str(exc))
 
-    # Budget floor: anything shorter than 6 words risks clipping
-    # meaningful content (verified-record confirmations, scenario
-    # closings). Per Yngve 1970 the minimum acknowledgment-plus-content
-    # unit is ~4 words; we add 2 to allow for honorifics ("sir") and a
-    # short content fragment.
-    _BUDGET_FLOOR = 6
+    # Budget floor: anything shorter risks clipping meaningful content
+    # (verified-record confirmations, scenario closings). Per Yngve 1970
+    # the minimum acknowledgment-plus-content unit is ~4 words; we add
+    # 2 (with-record default 6) for honorifics + content fragment, and
+    # 6 more (no-record default 12) so an honest fallback line like
+    # "Sir, I don't have the latest record here. May I take your
+    # child's name?" (14 words) actually lands.
+    _BUDGET_FLOOR_WITH_RECORD = 6
+    _BUDGET_FLOOR_NO_RECORD = 12
+    # Backwards-compat constant (some smoke-test scripts import it).
+    _BUDGET_FLOOR = _BUDGET_FLOOR_WITH_RECORD
     # The scenario *opening* turn (1st substantive agent reply after the
     # parent's consent) MUST convey the verified-record confirmation in
     # full — that is the *reason for the call*. Adapting the opening to
@@ -720,7 +739,10 @@ class ProductionPipeline:
         history.append(words)
         recent = history[-2:]
         avg = sum(recent) / len(recent)
-        budget = max(self._BUDGET_FLOOR, min(_MAX_AGENT_TURN_WORDS, int(round(avg))))
+        floor = self._session_budget_floor.get(
+            session_id, self._BUDGET_FLOOR_WITH_RECORD
+        )
+        budget = max(floor, min(_MAX_AGENT_TURN_WORDS, int(round(avg))))
         prev = self._dynamic_max_words.get(session_id, _MAX_AGENT_TURN_WORDS)
         self._dynamic_max_words[session_id] = budget
         if budget != prev:

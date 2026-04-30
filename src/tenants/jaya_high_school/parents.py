@@ -50,6 +50,32 @@ JAYA_PARENT_RECORDS: List[ParentRecord] = [
             "Father pays via UPI; reachable evenings after 6 PM."
         ),
     ),
+    # Test record for the second test number — exercises the
+    # PARTIAL fee_partial_reminder scenario (₹8,000 of ₹15,000 paid),
+    # which has news_offer configured but NO pivot (sensitive context).
+    ParentRecord(
+        phone="+919491116789",
+        salutation="Mrs.",
+        parent_name="Lakshmi Devi",
+        child_name="Sneha",
+        child_class="Class 6 - B",
+        term_label="April-September 2026",
+        term_fee_total_inr=15000,
+        fee_due_date="2026-04-15",
+        payments=[
+            PaymentEntry(
+                amount_inr=8000,
+                date="2026-04-12",
+                method="cash",
+                reference="RCPT-2026041200337",
+            ),
+        ],
+        language_preference="Telugu",
+        notes=(
+            "Sneha is in the science club. Family pays in cash. "
+            "Balance of ₹7,000 pending; first reminder."
+        ),
+    ),
     # ---- Extend below with additional Jaya HS parents per term ----
     # Records can also be supplied at runtime via the JAYA_PARENT_REGISTRY
     # env var (JSON list); see ParentRegistry._record_from_dict.

@@ -62,6 +62,7 @@ class Tenant:
         pivot_hint: str = "",
         news_offer_hint: str = "",
         news_block: str = "",
+        intent_shift_hint: str = "",
     ) -> str:
         """
         Compose the scenario posture_note + parent record block + any
@@ -90,6 +91,11 @@ class Tenant:
             chunks.append(
                 "## VERIFIED PARENT RECORD\n"
                 "(no record loaded for this call — admit honestly if asked)"
+            )
+        if intent_shift_hint:
+            chunks.append(
+                "## TURN-SCOPED HINT (apply ONLY to this immediate reply)\n"
+                + intent_shift_hint
             )
         if pivot_hint:
             chunks.append(
