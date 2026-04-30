@@ -155,11 +155,12 @@ class EducationReceptionist(BaseReceptionist):
         # to a specific tenant's helper. Acceptable here because the
         # honorific concept is pan-Indian; future tenants can supply
         # their own helper if regional differences emerge.
-        from src.tenants.jaya_high_school.honorifics import vocative
+        from src.tenants.jaya_high_school.honorifics import greeting_word, vocative
 
         addr = vocative(record) if record is not None else "sir"
+        greet = greeting_word(record) if record is not None else "Namaste"
         return (
-            f"Namaste {addr}. Calling from {short_name}. "
+            f"{greet} {addr}. Calling from {short_name}. "
             f"Is this a good time to talk, {addr}?"
         )
 
