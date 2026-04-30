@@ -7,11 +7,11 @@ AI pipeline (Streaming STT → LLM → TTS).
 Protocol (Twilio Media Streams):
     Inbound:
         "start"  → initialize CallSession + streaming pipeline + streamSid
-        "media"  → stream μ-law 8kHz audio chunks → pipeline
+        "media"  → stream μ-law 8 kHz audio chunks → pipeline
         "mark"   → playback tracking
         "stop"   → finalize session
     Outbound:
-        "media"  → send synthesized μ-law 8kHz audio back to caller
+        "media"  → send synthesized μ-law 8 kHz audio back to caller
 
 Critical Implementation Notes:
     1. Twilio requires `streamSid` in EVERY outbound media message [^43].
@@ -19,16 +19,22 @@ Critical Implementation Notes:
     3. With streaming pipeline, TTS audio arrives asynchronously via callback.
        The pipeline pushes audio; the handler sends it [^22].
     4. Barge-in: pipeline detects user speech during AI speech and cancels
-       the in-flight TTS task [^4][^5].
+       the in-flight TTS task [^4][^OG1].
     5. Send loop yields control (asyncio.sleep) so task cancellation has
-       an await point at which to take effect [^BI1].
+       an await point at which to take effect [^BI1][^PY1].
+    6. Twilio Media Streams frames audio in 20 ms chunks (160 bytes at
+       8 kHz μ-law) [^43]. Sending larger chunks causes buffering jitter.
+    7. Twilio sends `media` events continuously; filtering `track != "inbound"`
+       prevents echo-loop where the agent hears its own output [^44].
 
 Research Provenance:
     - Twilio Media Streams relay 8 kHz μ-law over WebSocket [^43].
     - RFC 6455 WebSocket provides full-duplex, ordered messaging [^21].
     - ITU-T G.711 μ-law is the PSTN companding standard [^38].
     - Streaming architecture: audio pushed via async callback [^22].
-    - Barge-in latency budget <300ms; audio truncation <100ms [^4].
+    - Barge-in latency budget <300 ms; audio truncation <100 ms [^4].
+    - Echo cancellation: agent output must not feed back into STT [^44].
+    - asyncio event loop must yield between I/O bursts to remain responsive [^PY1].
 """
 
 from __future__ import annotations
@@ -39,7 +45,10 @@ import asyncio
 from fastapi import WebSocket, WebSocketDisconnect
 
 from src.telephony.gateway import TelephonyGateway
-from src.infrastructure.logging_config import get_logger
+from src.infrastructure.logging_config import (
+    get_logger,
+    set_call_start_time,
+)
 from src.infrastructure.telemetry import (
     get_tracer,
     log_call_start,
@@ -51,7 +60,7 @@ from src.infrastructure.telemetry import (
 logger = get_logger("api.websocket")
 tracer = get_tracer()
 
-# Twilio Media Streams chunk size: 8 kHz × 20 ms = 160 samples/bytes
+# Twilio Media Streams chunk size: 8 kHz × 20 ms = 160 samples/bytes [^43][^38]
 _TWILIO_CHUNK_BYTES = 160
 
 
@@ -70,7 +79,7 @@ async def handle_twilio_websocket(websocket: WebSocket, call_sid: str):
 
     logger.info("websocket_connected", session_id=session_id)
 
-    # Async callback: pipeline pushes audio here when TTS is ready
+    # Async callback: pipeline pushes audio here when TTS is ready [^22]
     async def send_audio(mulaw_bytes: bytes) -> None:
         if stream_sid is None:
             return
@@ -86,6 +95,9 @@ async def handle_twilio_websocket(websocket: WebSocket, call_sid: str):
                 event_type = event.get("event")
 
                 if event_type == "start":
+                    # Anchor per-call wall clock for t_ms_since_call_start
+                    # in every downstream log event (DFS-007 §6).
+                    set_call_start_time(session_id)
                     start = event.get("start", {})
                     stream_sid = event.get("streamSid") or start.get("streamSid")
                     actual_call_sid = start.get("callSid", session_id)
@@ -93,6 +105,18 @@ async def handle_twilio_websocket(websocket: WebSocket, call_sid: str):
 
                     custom_params = start.get("customParameters", {})
                     explicit_domain = custom_params.get("domain")
+                    # Twilio Media Streams does NOT include To/From for
+                    # outbound calls in the `start` event — those live at
+                    # the Voice API level. The outbound caller passes
+                    # `parent_phone` as a <Parameter> in the TwiML so we
+                    # can perform the verified-record lookup. Fall back
+                    # to whatever the gateway parsed (inbound calls).
+                    parent_phone_param = (custom_params.get("parent_phone") or "").strip()
+                    effective_called = (
+                        parent_phone_param
+                        or metadata.to_number
+                        or None
+                    )
 
                     logger.info(
                         "media_stream_started",
@@ -101,13 +125,14 @@ async def handle_twilio_websocket(websocket: WebSocket, call_sid: str):
                         stream_sid=stream_sid,
                         from_number=metadata.from_number,
                         to_number=metadata.to_number,
+                        effective_called=effective_called,
                         domain=explicit_domain or "auto",
                         custom_params=custom_params,
                     )
                     log_call_start(
                         session_id,
                         metadata.from_number,
-                        metadata.to_number,
+                        effective_called or "",
                         explicit_domain or "auto",
                     )
 
@@ -115,7 +140,7 @@ async def handle_twilio_websocket(websocket: WebSocket, call_sid: str):
                         await pipeline.on_call_start(
                             session_id,
                             metadata.from_number,
-                            metadata.to_number,
+                            effective_called,
                             domain_id=explicit_domain,
                             send_callback=send_audio,
                         )
@@ -125,6 +150,8 @@ async def handle_twilio_websocket(websocket: WebSocket, call_sid: str):
                 elif event_type == "media":
                     if not pipeline:
                         continue
+                    # Twilio sends both "inbound" (caller) and "outbound" (agent)
+                    # tracks. Filtering outbound prevents echo feedback [^44].
                     track = event.get("media", {}).get("track", "inbound")
                     if track != "inbound":
                         continue
@@ -168,8 +195,8 @@ async def _send_audio(
 ) -> None:
     """
     Send μ-law audio back to Twilio as a media event.
-    Chunks into ~20 ms frames (160 bytes) to match telephony framing [^16].
-    Yields control between chunks so barge-in cancellation can take effect.
+    Chunks into ~20 ms frames (160 bytes) to match telephony framing [^43][^16].
+    Yields control between chunks so barge-in cancellation can take effect [^BI1][^PY1].
     """
     for i in range(0, len(mulaw_bytes), _TWILIO_CHUNK_BYTES):
         chunk = mulaw_bytes[i : i + _TWILIO_CHUNK_BYTES]
@@ -181,16 +208,20 @@ async def _send_audio(
         }
         await websocket.send_text(json.dumps(msg))
         # Yield control — gives the event loop a chance to process
-        # barge-in cancellation before queuing the next chunk [^BI1]
+        # barge-in cancellation before queuing the next chunk [^BI1][^PY1]
         await asyncio.sleep(0)
 
 
 # References
 # [^4]: Deepgram / ElevenLabs. (2026). Barge-In & Turn-Taking Guide.
-# [^5]: LiveKit. (2026). Adaptive Interruption Handling.
-# [^16]: Twilio. Media Streams framing.
+# [^16]: Twilio. Media Streams framing. 20 ms chunks at 8 kHz.
 # [^21]: Fette, I., & Melnikov, A. (2011). RFC 6455: The WebSocket Protocol. IETF.
 # [^22]: Gladia. (2025). Concurrent pipelines for voice AI.
 # [^38]: ITU-T. (1972). G.711: Pulse Code Modulation.
 # [^43]: Twilio. (2024). Media Streams API Documentation.
+# [^44]: Sondhi, M. M. (1967). An Adaptive Echo Canceller. Bell System Technical
+#         Journal, 46(3), 497–511.  Echo cancellation prevents feedback loops.
 # [^BI1]: Hamming AI. (2026). Barge-in recovery: yield between audio chunks.
+# [^OG1]: Orga AI. (2026). Barge-in for Voice Agents. orga-ai.com/blog/blog-barge-in-voice-agents-guide
+# [^PY1]: Python asyncio docs. (2024). Executing code in thread or process pools.
+#          docs.python.org/3/library/asyncio-eventloop.html#executing-code-in-thread-or-process-pools

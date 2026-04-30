@@ -55,22 +55,33 @@ except ImportError:
     sys.exit(1)
 
 
-def build_twiml(websocket_url: str, base_url: str, call_sid: str = "CAtest") -> str:
+def build_twiml(
+    websocket_url: str,
+    base_url: str,
+    call_sid: str = "CAtest",
+    parent_phone: str = "",
+) -> str:
     """
     Build TwiML that connects the outbound leg to our Media Streams
     WebSocket. Twilio streams 8 kHz μ-law audio in both directions [^43].
     Uses the actual CallSid in the WebSocket URL for proper session isolation.
+
+    For outbound calls the Media Streams `start` event does NOT include
+    the To/From numbers (those live at the Voice API level). We pass
+    `parent_phone` as a customParameter so the WebSocket handler can
+    look up the verified parent record at on_call_start.
     """
     # Replace placeholder with actual CallSid for session isolation
     actual_url = websocket_url.replace("CAtest", call_sid) if "CAtest" in websocket_url else websocket_url
+    # No <Say> introduction — the AI greeting is the first audio the caller
+    # hears, ensuring a single uniform voice (Deepgram Aura) throughout.
     twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Say voice="Polly.Joanna">This call is recorded for quality. Connecting you to the A I receptionist now.</Say>
-    <Pause length="1"/>
     <Connect>
         <Stream url="{actual_url}">
             <Parameter name="direction" value="outbound"/>
             <Parameter name="demo" value="true"/>
+            <Parameter name="parent_phone" value="{parent_phone}"/>
         </Stream>
     </Connect>
 </Response>"""
@@ -150,7 +161,9 @@ def main() -> int:
 </Response>"""
     else:
         # Placeholder twiml — actual CallSid will be inserted after call creation
-        twiml = build_twiml(websocket_url, base_url, call_sid="CAtest")
+        twiml = build_twiml(
+            websocket_url, base_url, call_sid="CAtest", parent_phone=args.to
+        )
 
     print("=" * 60)
     print("OUTBOUND DEMO CALL")
@@ -171,13 +184,13 @@ def main() -> int:
             recording_status_callback=recording_callback,
             status_callback=status_callback,
         )
-        # Rebuild TwiML with actual CallSid for proper session isolation
-        if websocket_url and "CAtest" in websocket_url:
-            twiml = build_twiml(websocket_url, base_url, call_sid=call_sid)
-            # Update the call with corrected TwiML
-            client = Client(account_sid, auth_token)
-            client.calls(call_sid).update(twiml=twiml)
-            print("[INFO] Updated TwiML with actual CallSid")
+        # NOTE: We previously tried to update the call with a TwiML that
+        # contained the real CallSid in the WebSocket URL. Twilio rejects
+        # that update while the call is still ringing ("Call is not
+        # in-progress"). The WebSocket handler accepts whatever
+        # `{call_sid}` segment Twilio sends in the URL, and the actual
+        # call SID is also available in the Media Streams `start` event,
+        # so the placeholder is harmless.
 
         print("TwiML:")
         print(twiml)
