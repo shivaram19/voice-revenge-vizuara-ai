@@ -28,6 +28,18 @@ def _closing(record: ParentRecord) -> str:
     )
 
 
+def _pivot(record: ParentRecord) -> str:
+    """
+    After the admission inquiry has been addressed, offer to share the
+    school's brochure / admission packet via WhatsApp — easy to accept,
+    easy to decline. Avoids extending the call unnecessarily.
+    """
+    return (
+        f"Sir, would you like me to share our admission brochure "
+        f"and fee structure on WhatsApp for your reference?"
+    )
+
+
 SCENARIO = Scenario(
     scenario_id="admission_inquiry",
     objective=(
@@ -63,4 +75,5 @@ SCENARIO = Scenario(
         "bye",
         "goodbye",
     ),
+    post_intent_pivot=_pivot,
 )

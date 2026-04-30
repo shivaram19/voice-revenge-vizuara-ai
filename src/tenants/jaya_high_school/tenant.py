@@ -56,12 +56,21 @@ class Tenant:
         return self.scenarios.get(scenario_id)
 
     def render_prompt_overlay(
-        self, record: Optional[ParentRecord], scenario: Optional[Scenario]
+        self,
+        record: Optional[ParentRecord],
+        scenario: Optional[Scenario],
+        pivot_hint: str = "",
     ) -> str:
         """
-        Compose the scenario posture_note and the parent record's
-        prompt block into a single overlay the LLM system prompt
-        appends to its base instructions.
+        Compose the scenario posture_note + parent record block + an
+        optional turn-scoped pivot hint into a single overlay the LLM
+        system prompt appends to its base instructions.
+
+        ``pivot_hint`` is the post-intent pivot text. When non-empty,
+        a "this turn only" instruction is appended telling the LLM to
+        offer the pivot once and then close based on the parent's
+        response. Caller is responsible for setting it only on the
+        single turn where the pivot should fire.
         """
         chunks: List[str] = []
         if scenario is not None:
@@ -72,6 +81,18 @@ class Tenant:
             chunks.append(
                 "## VERIFIED PARENT RECORD\n"
                 "(no record loaded for this call — admit honestly if asked)"
+            )
+        if pivot_hint:
+            chunks.append(
+                "## TURN-SCOPED HINT (apply ONLY to this immediate reply)\n"
+                "The primary call objective is satisfied — the parent has "
+                "signalled wrap-up. In your reply, gently offer this "
+                "pivot once, in your own natural words, before any final "
+                "closing:\n"
+                f"\"{pivot_hint}\"\n"
+                "Keep it ≤15 words. If the parent declines or sounds "
+                "rushed, accept gracefully and close warmly. Do not "
+                "repeat the pivot in any later turn."
             )
         return "\n\n".join(chunks)
 

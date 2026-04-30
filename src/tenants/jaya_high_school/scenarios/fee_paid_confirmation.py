@@ -31,6 +31,21 @@ def _closing(record: ParentRecord) -> str:
     )
 
 
+def _pivot(record: ParentRecord) -> str:
+    """
+    Once the parent has acknowledged the fee confirmation and is winding
+    down, gently offer a related topic — admission referral. Phrased as
+    a single, easy-to-decline question. Never offered if the parent
+    sounds rushed or distressed.
+    """
+    return (
+        f"Sir, before I let you go — "
+        f"do you know any family considering admission for next year? "
+        f"We would be happy to share details with them, "
+        f"or you may pass our office number along."
+    )
+
+
 SCENARIO = Scenario(
     scenario_id="fee_paid_confirmation",
     objective=(
@@ -61,4 +76,5 @@ SCENARIO = Scenario(
         "goodbye",
         "thank you very much",
     ),
+    post_intent_pivot=_pivot,
 )

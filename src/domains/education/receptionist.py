@@ -51,6 +51,12 @@ class EducationReceptionist(BaseReceptionist):
 
         self._parent_records: Dict[str, Optional[ParentRecord]] = {}
         self._scenarios: Dict[str, Optional[Any]] = {}
+        # Post-intent pivot bookkeeping. `_intent_satisfied` flips True
+        # the first time a caller utterance matches the active scenario's
+        # success_signals. `_pivot_offered` flips True the first time we
+        # inject the pivot hint into a prompt — preventing a second offer.
+        self._intent_satisfied: Dict[str, bool] = {}
+        self._pivot_offered: Dict[str, bool] = {}
 
     # ------------------------------------------------------------------
     # Override: handle_call_start — resolve parent + scenario, then greet.
@@ -81,6 +87,10 @@ class EducationReceptionist(BaseReceptionist):
         )
         self.sessions[session_id] = session
         self._emotion_machines[session_id] = EmotionStateMachine()
+
+        # Reset pivot bookkeeping for this session.
+        self._intent_satisfied[session_id] = False
+        self._pivot_offered[session_id] = False
 
         greeting = self._greeting_for(record)
         session.conversation_history.append(
@@ -131,7 +141,27 @@ class EducationReceptionist(BaseReceptionist):
         )
 
     # ------------------------------------------------------------------
-    # Override: _build_messages — inject scenario posture + parent record.
+    # Override: handle_transcript — detect intent satisfaction first,
+    # then delegate to the base class for the LLM round-trip.
+    # ------------------------------------------------------------------
+
+    async def handle_transcript(
+        self, session_id: str, transcript: str
+    ) -> str:
+        scenario = self._scenarios.get(session_id)
+        if (
+            scenario is not None
+            and not self._intent_satisfied.get(session_id, False)
+            and transcript
+        ):
+            text_lower = transcript.lower()
+            if any(sig in text_lower for sig in scenario.success_signals):
+                self._intent_satisfied[session_id] = True
+        return await super().handle_transcript(session_id, transcript)
+
+    # ------------------------------------------------------------------
+    # Override: _build_messages — inject scenario posture + parent record,
+    # and the post-intent pivot hint exactly once when due.
     # ------------------------------------------------------------------
 
     def _build_messages(
@@ -144,11 +174,25 @@ class EducationReceptionist(BaseReceptionist):
         scenario = self._scenarios.get(session.session_id)
         merged_context: Dict[str, Any] = dict(context or {})
 
+        # Decide whether THIS turn should carry the pivot hint.
+        pivot_hint = ""
+        if (
+            scenario is not None
+            and self._intent_satisfied.get(session.session_id, False)
+            and not self._pivot_offered.get(session.session_id, False)
+            and record is not None
+        ):
+            pivot_text = scenario.render_pivot(record)
+            if pivot_text:
+                pivot_hint = pivot_text
+                # Mark before the LLM call so a future _build_messages on
+                # the same turn (e.g. Phase 2 after a tool call) does not
+                # re-inject. The flag is reset only on the next call.
+                self._pivot_offered[session.session_id] = True
+
         if self._tenant is not None:
-            # Tenant renders scenario posture + record block as a single
-            # overlay; the prompt template inlines it as `parent_block`.
             merged_context["parent_block"] = self._tenant.render_prompt_overlay(
-                record, scenario
+                record, scenario, pivot_hint=pivot_hint
             )
         elif record is not None:
             merged_context["parent_block"] = record.to_prompt_block()
@@ -168,6 +212,8 @@ class EducationReceptionist(BaseReceptionist):
     async def handle_call_end(self, session_id: str) -> CallSession:
         self._parent_records.pop(session_id, None)
         self._scenarios.pop(session_id, None)
+        self._intent_satisfied.pop(session_id, None)
+        self._pivot_offered.pop(session_id, None)
         return await super().handle_call_end(session_id)
 
 

@@ -28,6 +28,15 @@ class Scenario:
                         (tone, what to volunteer, what to avoid)
         success_signals — phrases (lower-cased) the agent should treat as
                           conversation completion (e.g. "okay thank you")
+        post_intent_pivot — optional. Once primary intent is satisfied
+                          and the parent signals wrap-up, the agent
+                          gracefully offers this related topic (e.g.
+                          "do you know anyone considering admission?").
+                          Empty string disables — appropriate for
+                          sensitive scenarios (attendance follow-up
+                          where the family may be in distress, or fee
+                          overdue where adding a second ask would be
+                          tactless). Renders with the ParentRecord.
     """
 
     scenario_id: str
@@ -43,12 +52,19 @@ class Scenario:
         "bye",
         "goodbye",
     )
+    post_intent_pivot: Optional[Callable[[ParentRecord], str]] = None
 
     def render_opening(self, record: ParentRecord) -> str:
         return self.opening_line(record)
 
     def render_closing(self, record: ParentRecord) -> str:
         return self.closing_line(record)
+
+    def render_pivot(self, record: ParentRecord) -> str:
+        """Return the post-intent pivot text, or "" if not configured."""
+        if self.post_intent_pivot is None:
+            return ""
+        return self.post_intent_pivot(record)
 
 
 def pick_scenario(record: Optional[ParentRecord]) -> Optional[Scenario]:
