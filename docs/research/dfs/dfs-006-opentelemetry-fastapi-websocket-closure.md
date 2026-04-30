@@ -11,7 +11,9 @@
 
 All voice calls were dropping exactly 565–615ms after Twilio Media Streams WebSocket connection. The `<Say>` message played successfully, but the `<Connect><Stream>` immediately failed. After systematic elimination of hypotheses, the root cause was identified: **OpenTelemetry's FastAPI auto-instrumentation wraps ASGI WebSocket handlers in a way that silently closes long-lived bidirectional connections after ~600ms of idle time.**
 
-**Fix:** Remove `"fastapi"` from `azure-monitor-opentelemetry`'s `instrumentations` list. Manual span creation via `tracer.start_as_current_span()` continues to work without interference.
+**Fix (initial, incomplete):** Remove `"fastapi"` from `azure-monitor-opentelemetry`'s `instrumentations` list. Manual span creation via `tracer.start_as_current_span()` continues to work without interference.
+
+**Fix (correct):** Pass `instrumentation_options={"fastapi": {"enabled": False}}` to `configure_azure_monitor()`. Source-code audit of `azure-monitor-opentelemetry` v1.8.7 revealed that the `instrumentations=` kwarg is **ignored** by `_default_instrumentation_options()`; only `instrumentation_options` and `OTEL_PYTHON_DISABLED_INSTRUMENTATIONS` control enablement [^AM2].
 
 ---
 
@@ -77,7 +79,7 @@ connection closed          ← 600ms later
 
 **Conclusion:** The Python task is being terminated without normal exception handling. This points to ASGI-level interference, not application-level crash.
 
-### Experiment 3: Disable FastAPI Auto-Instrumentation
+### Experiment 3: Disable FastAPI Auto-Instrumentation (Incomplete)
 
 **Method:** Remove `"fastapi"` from `configure_azure_monitor(instrumentations=[...])`.
 
@@ -89,6 +91,36 @@ No response within 10s     ← Connection STAYED OPEN
 ```
 
 **Conclusion:** FastAPI auto-instrumentation was the sole cause of premature closure.
+
+### Experiment 4: Source-Code Audit of `azure-monitor-opentelemetry` v1.8.7
+
+**Method:** Read `_configure.py` and `_utils/configurations.py` from the installed distro.
+
+**Critical finding:** `_default_instrumentation_options()` in `configurations.py` does NOT read the `instrumentations=` kwarg. It only checks:
+1. `OTEL_PYTHON_DISABLED_INSTRUMENTATIONS` environment variable
+2. `instrumentation_options` kwarg
+
+The `instrumentations=` parameter passed to `configure_azure_monitor()` is **completely ignored** for determining which libraries are instrumented [^AM2].
+
+**Result:** The previous fix (removing `"fastapi"` from `instrumentations`) appeared to work in manual testing but did NOT actually disable FastAPI instrumentation in production. The WebSocket still closed after ~560ms on the live call.
+
+### Experiment 5: Correct Fix with `instrumentation_options`
+
+**Method:** Pass `instrumentation_options={"fastapi": {"enabled": False}}` to `configure_azure_monitor()`.
+
+**Result:**
+```python
+cam(
+    connection_string=conn_str,
+    instrumentation_options={
+        "fastapi": {"enabled": False},
+        "urllib3": {"enabled": True},
+        "requests": {"enabled": True},
+    },
+)
+```
+
+**Conclusion:** This is the correct control surface. Deployed as revision 0000022.
 
 ---
 
@@ -132,14 +164,26 @@ configure_azure_monitor(
     instrumentations=["fastapi", "urllib3", "requests"],
 )
 
-# AFTER (fixed)
+# AFTER (incomplete — instrumentations= is ignored by the distro)
 configure_azure_monitor(
     connection_string=conn_str,
     instrumentations=["urllib3", "requests"],
 )
+
+# AFTER (correct — instrumentation_options is the actual control surface)
+configure_azure_monitor(
+    connection_string=conn_str,
+    instrumentation_options={
+        "fastapi": {"enabled": False},
+        "urllib3": {"enabled": True},
+        "requests": {"enabled": True},
+    },
+)
 ```
 
 **Impact:** FastAPI HTTP routes lose automatic span creation, but manual `tracer.start_as_current_span()` continues to work. WebSocket connections remain stable.
+
+**Belt-and-suspenders:** Also set environment variable `OTEL_PYTHON_DISABLED_INSTRUMENTATIONS=fastapi` in the container app. This provides defense in depth if the `instrumentation_options` dict is bypassed by future distro updates [^AM2].
 
 ---
 
@@ -154,6 +198,9 @@ configure_azure_monitor(
 ## 7. Citations
 
 [^OT1]: OpenTelemetry Python. (2025). `opentelemetry-instrumentation-fastapi` — ASGI middleware instrumentation. https://github.com/open-telemetry/opentelemetry-python-contrib/tree/main/instrumentation/opentelemetry-instrumentation-fastapi
+[^AM2]: Microsoft. (2024). Azure Monitor OpenTelemetry Distro v1.8.7 source code.
+        `azure/monitor/opentelemetry/_utils/configurations.py:_default_instrumentation_options()`
+        confirms `instrumentations=` kwarg is ignored; only `instrumentation_options` controls enablement.
 [^43]: Twilio. (2024). Media Streams API Documentation. https://www.twilio.com/docs/voice/media-streams
 [^AS1]: Python asyncio docs. (2024). Executing code in thread or process pools. https://docs.python.org/3/library/asyncio-eventloop.html#executing-code-in-thread-or-process-pools
 
@@ -172,3 +219,6 @@ configure_azure_monitor(
 | 16:22 | Deploy rev 0000020 without `"fastapi"` instrumentation |
 | 16:23 | Manual WebSocket test — **connection stays open >10s** |
 | 16:27 | Deploy rev 0000021 with clean code |
+| 16:32 | Live call still drops after 560ms — `instrumentations=` ignored |
+| 17:15 | Source-code audit reveals `instrumentation_options` is real control surface |
+| 17:47 | Deploy rev 0000022 with `instrumentation_options={"fastapi": {"enabled": False}}` |
