@@ -87,6 +87,28 @@ class Tenant:
             chunks.append(scenario.posture_note.rstrip())
         if record is not None:
             chunks.append(record.to_prompt_block())
+            # Inject the rendered opening + closing templates as
+            # near-verbatim guidance. The LLM was observed (call
+            # CA30cc18..., 2026-04-30) to ignore the Telangana
+            # code-mix templates and revert to plain English with a
+            # single Telugu loanword. Surfacing the actual template
+            # in the prompt with explicit "speak this verbatim"
+            # framing nudges the model to honour the regional register.
+            if scenario is not None:
+                opening = scenario.render_opening(record)
+                closing = scenario.render_closing(record)
+                chunks.append(
+                    "## SUGGESTED FIRST REPLY — speak verbatim (or "
+                    "near-verbatim) AFTER the parent's first response\n"
+                    "(this is the Telangana-register opening for this "
+                    "scenario; do not paraphrase it into plain English):\n\n"
+                    f"\"{opening}\""
+                )
+                chunks.append(
+                    "## SUGGESTED CLOSING — speak when the parent "
+                    "signals wrap-up\n"
+                    f"\"{closing}\""
+                )
         else:
             chunks.append(
                 "## VERIFIED PARENT RECORD\n"
