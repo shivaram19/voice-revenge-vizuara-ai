@@ -70,9 +70,12 @@ async def twilio_inbound(request: Request) -> Response:
     if domain_param:
         custom_params += f'\n            <Parameter name="domain" value="{domain_param}"/>'
 
+    # No <Say> introduction — the AI greeting is the first audio the caller
+    # hears, ensuring a single uniform voice (Deepgram Aura) throughout.
+    # A separate Polly voice for the intro was perceived as disjointed
+    # (user feedback: "2 woman voices and a man voice").
     twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Say voice="Polly.Joanna">Thank you for calling. Connecting you to our virtual receptionist.</Say>
     <Connect>
         <Stream url="{ws_url}">
             {custom_params}
@@ -128,3 +131,12 @@ async def twilio_recording(request: Request) -> dict:
         }) + "\n")
 
     return {"status": "received", "recording_sid": recording_sid, "call_sid": call_sid}
+
+
+# References
+# [^21]: Fette, I., & Melnikov, A. (2011). RFC 6455: The WebSocket Protocol. IETF.
+# [^38]: ITU-T. (1972). G.711: Pulse Code Modulation.
+# [^43]: Twilio. (2024). Media Streams API Documentation. twilio.com/docs/voice/media-streams.
+# [^80]: Twilio. (2024). Recordings API Documentation. twilio.com/docs/voice/api/recording.
+# [^84]: Fetch Standard. (2023). CORS protocol. fetch.spec.whatwg.org/#cors-protocol
+# [^85]: Nielsen, J., & Loranger, H. (2006). Prioritizing Web Usability. New Riders.

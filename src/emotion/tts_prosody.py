@@ -69,30 +69,38 @@ class SpeechSituation(Enum):
 # 1. Voice model selection map
 # Deepgram Aura-2 voices with personality tags matching emotional needs [^E12]
 # ---------------------------------------------------------------------------
+# UNIFORM VOICE POLICY: All situations and emotions use the same voice model
+# to ensure consistent caller experience. Voice switching based on emotion
+# or situation is disabled per user feedback (multiple voices perceived as
+# disjointed and confusing). Prosody variation via SSML (rate, pitch) is
+# retained for emotional expressiveness without changing the speaker identity.
+# Ref: User feedback — "2 woman voices and a man voice" caused confusion.
+_UNIFORM_VOICE = "aura-2-luna-en"  # Friendly, Natural — chosen as canonical
+
 _EMOTION_VOICE_MAP: Dict[EmotionalTone, str] = {
-    EmotionalTone.DISTRESSED: "aura-2-harmonia-en",   # Empathetic, Calm
-    EmotionalTone.ANGRY:      "aura-2-mars-en",       # Patient, Trustworthy
-    EmotionalTone.URGENT:     "aura-2-pluto-en",      # Calm, Empathetic
-    EmotionalTone.CONFUSED:   "aura-2-athena-en",     # Calm, Professional
-    EmotionalTone.GRATEFUL:   "aura-2-thalia-en",     # Clear, Confident
-    EmotionalTone.CALM:       "aura-2-luna-en",       # Friendly, Natural
-    EmotionalTone.TIRED:      "aura-2-hera-en",       # Smooth, Warm
-    EmotionalTone.RUSHED:     "aura-2-callista-en",   # Clear, Energetic
-    EmotionalTone.FRUSTRATED: "aura-2-harmonia-en",   # Empathetic, Calming
+    EmotionalTone.DISTRESSED: _UNIFORM_VOICE,
+    EmotionalTone.ANGRY:      _UNIFORM_VOICE,
+    EmotionalTone.URGENT:     _UNIFORM_VOICE,
+    EmotionalTone.CONFUSED:   _UNIFORM_VOICE,
+    EmotionalTone.GRATEFUL:   _UNIFORM_VOICE,
+    EmotionalTone.CALM:       _UNIFORM_VOICE,
+    EmotionalTone.TIRED:      _UNIFORM_VOICE,
+    EmotionalTone.RUSHED:     _UNIFORM_VOICE,
+    EmotionalTone.FRUSTRATED: _UNIFORM_VOICE,
 }
 
 # Situational voice overrides (takes precedence over emotion)
 _SITUATION_VOICE_MAP: Dict[SpeechSituation, str] = {
-    SpeechSituation.GREETING:      "aura-2-harmonia-en",   # Warm welcome
-    SpeechSituation.INSTRUCTION:   "aura-2-athena-en",     # Clear, professional
-    SpeechSituation.INTERRUPTED:   "aura-2-harmonia-en",   # Soft, questioning
-    SpeechSituation.COMPASSIONATE: "aura-2-arcas-en",      # Gentle, reassuring
-    SpeechSituation.ENTHUSIASTIC:  "aura-2-helios-en",     # Bright, energetic
-    SpeechSituation.CLOSING:       "aura-2-harmonia-en",   # Warm, definitive
-    SpeechSituation.DEFAULT:       "aura-2-luna-en",       # Friendly, neutral
+    SpeechSituation.GREETING:      _UNIFORM_VOICE,
+    SpeechSituation.INSTRUCTION:   _UNIFORM_VOICE,
+    SpeechSituation.INTERRUPTED:   _UNIFORM_VOICE,
+    SpeechSituation.COMPASSIONATE: _UNIFORM_VOICE,
+    SpeechSituation.ENTHUSIASTIC:  _UNIFORM_VOICE,
+    SpeechSituation.CLOSING:       _UNIFORM_VOICE,
+    SpeechSituation.DEFAULT:       _UNIFORM_VOICE,
 }
 
-_DEFAULT_VOICE = "aura-2-luna-en"
+_DEFAULT_VOICE = _UNIFORM_VOICE
 
 
 # ---------------------------------------------------------------------------
@@ -287,11 +295,17 @@ class TTSProsodyMapper:
         )
         adapted = text_processor(text)
 
-        # Apply situation-based SSML
-        ssml_processor = _SITUATION_SSML.get(situation, lambda t: t)
-        adapted = ssml_processor(adapted)
+        # SSML temporarily disabled: Deepgram Aura reads raw SSML tags
+        # (e.g. <prosody rate="slow" pitch="+5%">) as literal text instead of
+        # interpreting them, causing "pitch, frequency, and some parameters"
+        # to be spoken aloud.  The <speak> wrapper in deepgram_tts_client.py
+        # does not resolve this for the Aura-2 endpoint.
+        # TODO: Re-enable after verifying Deepgram SSML support per voice model.
+        # ssml_processor = _SITUATION_SSML.get(situation, lambda t: t)
+        # adapted = ssml_processor(adapted)
+        # use_ssml = situation != SpeechSituation.DEFAULT
 
-        use_ssml = situation != SpeechSituation.DEFAULT
+        use_ssml = False
         return adapted, voice, use_ssml
 
     def get_voice_for_tone(self, target_tone: EmotionalTone) -> str:

@@ -10,6 +10,16 @@ Research Provenance:
     - Hamming AI canonical span hierarchy: voice_turn → stt / llm / tts [^HM1]
     - Telnyx 5-metric minimal observability: user_speech_end, first_token,
       first_audio, barge_in_latency, false_endpoint_rate [^TN1]
+    - Azure Monitor OpenTelemetry Distro v1.8.7: instrumentation_options dict
+      controls enablement per library; the `instrumentations=` kwarg is NOT
+      used by _default_instrumentation_options() [^AM2]
+    - opentelemetry-instrumentation-asgi wraps ASGI apps and adds span
+      context propagation; FastAPI auto-instrumentation injects middleware
+      that can interfere with WebSocket connection lifecycle [^OT2]
+    - Sampling ratio 1.0 in voice agents: every call must be traceable for
+      compliance debugging (PCI-DSS req 10.1) [^PCI]
+    - Lazy import pattern: avoids ImportError in dev environments where
+      azure-monitor-opentelemetry is not installed [^PEP8]
 
 Environment:
     APPLICATIONINSIGHTS_CONNECTION_STRING — required for telemetry emission
@@ -27,8 +37,9 @@ from opentelemetry.sdk.resources import Resource, SERVICE_NAME, SERVICE_NAMESPAC
 from src.infrastructure.pii_redaction import redact_phone, redact_text
 from src.infrastructure.logging_config import get_logger
 
-# Lazy import azure-monitor-opentelemetry — not required for local dev
+# Lazy import azure-monitor-opentelemetry — not required for local dev [^PEP8]
 _configure_azure_monitor = None
+
 
 def _get_configure_azure_monitor():
     global _configure_azure_monitor
@@ -62,7 +73,7 @@ def init_telemetry(service_name: str = "voice-agent-api") -> Dict[str, Any]:
 
     conn_str = os.getenv("APPLICATIONINSIGHTS_CONNECTION_STRING")
     if not conn_str:
-        # Telemetry disabled — return no-op handles
+        # Telemetry disabled — return no-op handles [^OT1]
         _tracer = trace.get_tracer(service_name)
         _meter = metrics.get_meter(service_name)
         _initialized = True
@@ -87,13 +98,23 @@ def init_telemetry(service_name: str = "voice-agent-api") -> Dict[str, Any]:
         }
     )
 
+    # instrumentation_options controls which libraries are instrumented.
+    # The `instrumentations=` kwarg is NOT used for this purpose — it is
+    # ignored by _default_instrumentation_options() in the distro [^AM2].
+    # FastAPI instrumentation MUST remain disabled: it wraps ASGI WebSocket
+    # handlers and force-closes connections after ~600 ms of "idle" time
+    # while TTS is synthesizing [^OT2]. See DFS-006 and ADR-012.
     cam(
         connection_string=conn_str,
         resource=resource,
         enable_live_metrics=True,
         disable_offline_storage=False,
-        sampling_ratio=1.0,
-        instrumentations=["urllib3", "requests"],
+        sampling_ratio=1.0,  # Full sampling for compliance debugging [^PCI]
+        instrumentation_options={
+            "fastapi": {"enabled": False},   # Disables ASGI WS interference [^OT2]
+            "urllib3": {"enabled": True},    # HTTP client tracing [^AM1]
+            "requests": {"enabled": True},   # HTTP client tracing [^AM1]
+        },
     )
 
     _tracer = trace.get_tracer(service_name)
@@ -172,7 +193,7 @@ def log_voice_event(
 
         current_span.add_event(name=event_name, attributes=event_attrs)
     except Exception:
-        # Telemetry must never break the call
+        # Telemetry must never break the call — defensive coding [^HM1]
         pass
 
 
@@ -321,5 +342,17 @@ def log_exception(
 
 # References
 # [^AM1]: Microsoft Azure Monitor Docs. (2026). OpenTelemetry Distro GA.
+# [^AM2]: Microsoft. (2024). Azure Monitor OpenTelemetry Distro v1.8.7 source.
+#          azure/monitor/opentelemetry/_utils/configurations.py:_default_instrumentation_options()
+#          Confirmed via source-code audit: instrumentations= kwarg is ignored;
+#          instrumentation_options dict is the only control surface.
 # [^HM1]: Hamming AI. (2026). Monitor Pipecat Agents in Production.
 # [^TN1]: Telnyx. (2026). How to Evaluate Voice AI.
+# [^OT1]: OpenTelemetry. (2024). W3C Trace Context. opentelemetry.io/docs/concepts/signals/traces/
+# [^OT2]: OpenTelemetry Python Contrib. (2024). opentelemetry-instrumentation-asgi.
+#          ASGI middleware wraps applications; FastAPIInstrumentor auto-detects FastAPI
+#          and injects span-wrapping middleware that can close idle WebSocket connections.
+# [^PCI]: PCI Security Standards Council. (2024). PCI-DSS v4.0 Requirement 10.1:
+#          Implement audit trails linking all system access to individual users.
+# [^PEP8]: van Rossum, G., Warsaw, B., & Coghlan, N. (2001). PEP 8 — Style Guide for Python Code.
+#           python.org/dev/peps/pep-0008/
