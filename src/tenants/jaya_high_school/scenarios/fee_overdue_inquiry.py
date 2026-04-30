@@ -11,13 +11,14 @@ role is to remove ambiguity, not to apply pressure.
 from __future__ import annotations
 
 from src.domains.education.parent_registry import ParentRecord
+from src.tenants.jaya_high_school.honorifics import thanks, vocative
 from src.tenants.jaya_high_school.scenarios.base import Scenario
 
 
 def _opening(record: ParentRecord) -> str:
     total = f"₹{record.term_fee_total_inr:,}"
     return (
-        f"Thank you for taking the call, sir. "
+        f"{thanks(record)} for taking the call, {vocative(record)}. "
         f"I am calling about {record.child_name}'s fee for "
         f"{record.term_label}. The amount of {total} is "
         f"due by {record.fee_due_date}. May I help with any question?"
@@ -25,9 +26,10 @@ def _opening(record: ParentRecord) -> str:
 
 
 def _closing(record: ParentRecord) -> str:
+    voc = vocative(record)
     return (
-        "Thank you sir. The office will follow up if needed. "
-        "Have a peaceful day."
+        f"{thanks(record)} {voc}. The office will follow up if needed. "
+        f"Have a peaceful day, {voc}."
     )
 
 

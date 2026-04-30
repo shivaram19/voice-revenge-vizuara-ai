@@ -11,22 +11,24 @@ illness, bereavement, or financial stress; the agent must lead with care.
 from __future__ import annotations
 
 from src.domains.education.parent_registry import ParentRecord
+from src.tenants.jaya_high_school.honorifics import thanks, vocative
 from src.tenants.jaya_high_school.scenarios.base import Scenario
 
 
 def _opening(record: ParentRecord) -> str:
     return (
-        f"Thank you for taking the call, sir. "
+        f"{thanks(record)} for taking the call, {vocative(record)}. "
         f"We have not seen {record.child_name} in school for a few days. "
         f"I just wanted to check — is everything alright at home?"
     )
 
 
 def _closing(record: ParentRecord) -> str:
+    voc = vocative(record)
     return (
-        f"Thank you sir. We hope to see {record.child_name} back soon. "
+        f"{thanks(record)} {voc}. We hope to see {record.child_name} back soon. "
         "Please feel free to call the office anytime. "
-        "Have a peaceful day."
+        f"Have a peaceful day, {voc}."
     )
 
 

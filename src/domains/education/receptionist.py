@@ -144,15 +144,23 @@ class EducationReceptionist(BaseReceptionist):
 
         User directive (2026-04-30): "too many words in the beginning…
         calling from jaya school is this a good time to talk to you
-        sir." Greeting is now ≤14 words regardless of whether the
-        record is loaded.
+        sir." Greeting is ≤16 words regardless of whether the record
+        is loaded.
+
+        DFS-010 Option A: branches on ParentRecord.language_preference
+        to use 'Garu' for Telugu-preference parents, 'sir' for English.
         """
-        # Use the short school name (drops ", Suryapet") — the parent
-        # already knows which school's voice they expect.
         short_name = self.config.company_name.split(",")[0].strip()
+        # Local import to avoid coupling the generic education domain
+        # to a specific tenant's helper. Acceptable here because the
+        # honorific concept is pan-Indian; future tenants can supply
+        # their own helper if regional differences emerge.
+        from src.tenants.jaya_high_school.honorifics import vocative
+
+        addr = vocative(record) if record is not None else "sir"
         return (
-            f"Namaste sir. Calling from {short_name}. "
-            "Is this a good time to talk, sir?"
+            f"Namaste {addr}. Calling from {short_name}. "
+            f"Is this a good time to talk, {addr}?"
         )
 
     # ------------------------------------------------------------------

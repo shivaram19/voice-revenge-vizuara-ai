@@ -10,21 +10,23 @@ sales call — informational and respectful.
 from __future__ import annotations
 
 from src.domains.education.parent_registry import ParentRecord
+from src.tenants.jaya_high_school.honorifics import thanks, vocative
 from src.tenants.jaya_high_school.scenarios.base import Scenario
 
 
 def _opening(record: ParentRecord) -> str:
     return (
-        f"Thank you for taking the call, sir. "
+        f"{thanks(record)} for taking the call, {vocative(record)}. "
         f"I am calling regarding {record.child_name}'s admission inquiry "
         f"with our school. May I share an update?"
     )
 
 
 def _closing(record: ParentRecord) -> str:
+    voc = vocative(record)
     return (
-        "Thank you for considering Jaya High School, sir. "
-        "May your child shine. Have a peaceful day."
+        f"{thanks(record)} for considering Jaya High School, {voc}. "
+        f"May your child shine. Have a peaceful day, {voc}."
     )
 
 

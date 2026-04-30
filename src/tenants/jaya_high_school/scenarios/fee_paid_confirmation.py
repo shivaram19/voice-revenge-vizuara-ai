@@ -9,6 +9,7 @@ money. Do NOT pitch new courses. Aim for ≤4 turns end-to-end.
 from __future__ import annotations
 
 from src.domains.education.parent_registry import ParentRecord
+from src.tenants.jaya_high_school.honorifics import thanks, vocative
 from src.tenants.jaya_high_school.scenarios.base import Scenario
 
 
@@ -16,8 +17,9 @@ def _opening(record: ParentRecord) -> str:
     last = record.payments[-1] if record.payments else None
     paid_str = f"₹{record.term_fee_total_inr:,}"
     on_date = f" on {last.date}" if last else ""
+    voc = vocative(record)
     return (
-        f"Thank you for taking the call, sir. "
+        f"{thanks(record)} for taking the call, {voc}. "
         f"I am calling to confirm that {record.child_name}'s fee of "
         f"{paid_str} for {record.term_label} has been received{on_date}. "
         "Everything is settled."
@@ -25,9 +27,10 @@ def _opening(record: ParentRecord) -> str:
 
 
 def _closing(record: ParentRecord) -> str:
+    voc = vocative(record)
     return (
-        f"Thank you for your prompt payment, sir. "
-        f"Have a peaceful day."
+        f"{thanks(record)} for your prompt payment, {voc}. "
+        f"Have a peaceful day, {voc}."
     )
 
 

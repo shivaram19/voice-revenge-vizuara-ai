@@ -9,6 +9,7 @@ questions or need an installment plan, never pressure.
 from __future__ import annotations
 
 from src.domains.education.parent_registry import ParentRecord
+from src.tenants.jaya_high_school.honorifics import thanks, vocative
 from src.tenants.jaya_high_school.scenarios.base import Scenario
 
 
@@ -16,7 +17,7 @@ def _opening(record: ParentRecord) -> str:
     paid = f"₹{record.fee_paid_total_inr:,}"
     balance = f"₹{record.fee_balance_inr:,}"
     return (
-        f"Thank you for taking the call, sir. "
+        f"{thanks(record)} for taking the call, {vocative(record)}. "
         f"I see you have paid {paid} of {record.child_name}'s fees. "
         f"A balance of {balance} remains for {record.term_label}, "
         f"due by {record.fee_due_date}."
@@ -24,9 +25,10 @@ def _opening(record: ParentRecord) -> str:
 
 
 def _closing(record: ParentRecord) -> str:
+    voc = vocative(record)
     return (
-        "Thank you, sir. The office will note this conversation. "
-        "Have a peaceful day."
+        f"{thanks(record)}, {voc}. The office will note this conversation. "
+        f"Have a peaceful day, {voc}."
     )
 
 
