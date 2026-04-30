@@ -115,8 +115,15 @@ _AUDIO_CHUNK_MS = 400          # Send audio in ~400 ms chunks [^BI1]
 _AUDIO_BYTES_PER_MS = 8        # 8 kHz μ-law = 8 bytes/ms [^38]
 _CHUNK_SIZE = _AUDIO_CHUNK_MS * _AUDIO_BYTES_PER_MS  # 3200 bytes
 
-# Patience filler text (used when LLM exceeds _LLM_FILLER_AFTER_MS)
-_FILLER_TEXT = "One moment please, sir."
+# Patience filler text (used when LLM exceeds _LLM_FILLER_AFTER_MS).
+# Language-branched: Telugu-pref parents hear a Telangana-register
+# filler so the prosody/voice stay consistent (otherwise an English
+# "One moment please, sir." would render through Bulbul's Telugu
+# voice and sound register-broken).
+_FILLER_TEXT_EN = "One moment please, sir."
+_FILLER_TEXT_TE = "Oka nimisham, andi."
+# Default for backwards-compat / receptionist-less paths.
+_FILLER_TEXT = _FILLER_TEXT_EN
 
 # Stage names for cached scenario flow (user directive 2026-04-30)
 _STAGE_EXPECT_INVITATION = "expect_invitation"
@@ -767,15 +774,31 @@ class ProductionPipeline:
         if not send_cb:
             return
 
+        # Choose filler text by language preference so the prosody
+        # matches the rest of the call. A Telugu-pref session hearing
+        # an English filler through the Telugu Bulbul voice is a
+        # register-break the parent notices instantly.
+        filler_text = _FILLER_TEXT_EN
+        receptionist = self._session_receptionist.get(session_id)
+        if receptionist is not None and hasattr(
+            receptionist, "session_language_preference"
+        ):
+            try:
+                pref = (receptionist.session_language_preference(session_id) or "")
+                if pref.strip().lower() == "telugu":
+                    filler_text = _FILLER_TEXT_TE
+            except Exception:
+                pass
+
         logger.info(
             "filler_emitted",
             session_id=session_id,
             after_ms=after_ms,
-            text=_FILLER_TEXT,
+            text=filler_text,
         )
         try:
             audio = await self._synthesize_to_ulaw(
-                _FILLER_TEXT,
+                filler_text,
                 emotion_tone=None,
                 situation=SpeechSituation.DEFAULT,
                 session_id=session_id,
