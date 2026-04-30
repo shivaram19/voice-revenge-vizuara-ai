@@ -1,16 +1,23 @@
 """
-Education Receptionist — Personalized via Verified Parent Records
-==================================================================
-Subclass of BaseReceptionist that, at call start, looks up the parent
-record by phone number and:
-  1. Renders a personalized, status-aware greeting.
-  2. Injects the verified record into the system prompt so the LLM
-     speaks supportively from authoritative data instead of probing
-     for information.
+Education Receptionist — Tenant- and Scenario-Aware
+====================================================
+Subclass of BaseReceptionist that, at call start, resolves the active
+*tenant* (which school we're calling on behalf of), looks up the parent
+record from that tenant's registry, picks the *scenario* the call falls
+into (fee_paid_confirmation / fee_partial_reminder / fee_overdue_inquiry
+/ admission_inquiry / attendance_followup), and renders a personalised
+scenario-specific greeting plus a posture-and-record overlay for the LLM.
+
+The generic education domain owns conversation orchestration; the tenant
+module (`src/tenants/<tenant_id>/`) owns the school identity, parent data,
+and scenario templates. This separation lets the same domain serve many
+schools without duplicating prompt logic — only data and templates change.
 
 Ref: Gamma et al. 1994 (Template Method) [^95];
      "Parent data contract" project memory (2026-04-30);
-     ADR-013 (patience), DFS-007 (Suryapet demographic).
+     ADR-013 (patience), DFS-007 (Suryapet demographic);
+     user dialogue 2026-04-30 ("build separate module jayahigh school
+     system", "templates that would be for different domains").
 """
 
 from typing import Any, Dict, List, Optional
@@ -25,17 +32,28 @@ from src.domains.education.parent_registry import ParentRecord, ParentRegistry
 class EducationReceptionist(BaseReceptionist):
     """
     Concrete receptionist for the education domain.
-    Personalizes every call with a verified parent record when available.
+    Pulls tenant-specific data + scenario templates from the active
+    Tenant facade (see `src.tenants.get_active_tenant`).
     """
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
-        self._registry = ParentRegistry()
+        # Resolve the active tenant lazily so dev/test environments
+        # without a tenant configured still work via the in-memory
+        # ParentRegistry default seed.
+        from src.tenants import get_active_tenant
+
+        self._tenant = get_active_tenant()
+        if self._tenant is not None:
+            self._registry = ParentRegistry(self._tenant.parent_records)
+        else:
+            self._registry = ParentRegistry()
+
         self._parent_records: Dict[str, Optional[ParentRecord]] = {}
+        self._scenarios: Dict[str, Optional[Any]] = {}
 
     # ------------------------------------------------------------------
-    # Override: handle_call_start so we can resolve the parent record
-    # *before* the greeting is generated and personalize the greeting.
+    # Override: handle_call_start — resolve parent + scenario, then greet.
     # ------------------------------------------------------------------
 
     async def handle_call_start(
@@ -47,6 +65,13 @@ class EducationReceptionist(BaseReceptionist):
         # Look up parent — try `called` (outbound) then `caller` (inbound).
         record = self._registry.lookup(called) or self._registry.lookup(caller)
         self._parent_records[session_id] = record
+
+        # Pick scenario via the tenant; fall back to status-only mapping
+        # when no tenant is configured (dev mode).
+        scenario = None
+        if self._tenant is not None:
+            scenario = self._tenant.scenario_for(record)
+        self._scenarios[session_id] = scenario
 
         session = CallSession(
             session_id=session_id,
@@ -70,8 +95,12 @@ class EducationReceptionist(BaseReceptionist):
 
     def _greeting_for(self, record: Optional[ParentRecord]) -> str:
         """
-        Status-aware, short, outbound greeting.
-        Per ADR-013: ≤18 words, single question, no marketing language.
+        Status-aware, short, outbound greeting. The greeting only
+        identifies the school + child + topic and asks consent. The
+        scenario-specific opening line (paid-in-full thanks, balance
+        reminder, etc.) is delivered on the SECOND turn after the
+        parent confirms it's a good time — keeps the greeting under
+        ADR-013's 18-word budget.
         """
         company = self.config.company_name
         if record is None:
@@ -102,7 +131,7 @@ class EducationReceptionist(BaseReceptionist):
         )
 
     # ------------------------------------------------------------------
-    # Override: _build_messages to inject the verified-record block
+    # Override: _build_messages — inject scenario posture + parent record.
     # ------------------------------------------------------------------
 
     def _build_messages(
@@ -112,9 +141,18 @@ class EducationReceptionist(BaseReceptionist):
         context: Dict[str, Any],
     ) -> List[Dict[str, Any]]:
         record = self._parent_records.get(session.session_id)
+        scenario = self._scenarios.get(session.session_id)
         merged_context: Dict[str, Any] = dict(context or {})
-        if record is not None:
+
+        if self._tenant is not None:
+            # Tenant renders scenario posture + record block as a single
+            # overlay; the prompt template inlines it as `parent_block`.
+            merged_context["parent_block"] = self._tenant.render_prompt_overlay(
+                record, scenario
+            )
+        elif record is not None:
             merged_context["parent_block"] = record.to_prompt_block()
+
         return build_education_prompt(
             company_name=self.config.company_name,
             hours_text=self.config.hours_text,
@@ -124,11 +162,12 @@ class EducationReceptionist(BaseReceptionist):
         )
 
     # ------------------------------------------------------------------
-    # Override: handle_call_end to clean up parent-record cache
+    # Override: handle_call_end — purge per-session caches.
     # ------------------------------------------------------------------
 
     async def handle_call_end(self, session_id: str) -> CallSession:
         self._parent_records.pop(session_id, None)
+        self._scenarios.pop(session_id, None)
         return await super().handle_call_end(session_id)
 
 
