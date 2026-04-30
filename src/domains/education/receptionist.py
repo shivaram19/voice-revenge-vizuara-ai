@@ -137,39 +137,22 @@ class EducationReceptionist(BaseReceptionist):
 
     def _greeting_for(self, record: Optional[ParentRecord]) -> str:
         """
-        Status-aware, short, outbound greeting. The greeting only
-        identifies the school + child + topic and asks consent. The
-        scenario-specific opening line (paid-in-full thanks, balance
-        reminder, etc.) is delivered on the SECOND turn after the
-        parent confirms it's a good time — keeps the greeting under
-        ADR-013's 18-word budget.
-        """
-        company = self.config.company_name
-        if record is None:
-            return (
-                f"Namaste sir. This is calling from {company}. "
-                "I have a small reminder about your child's school fees. "
-                "Is this a good time to speak?"
-            )
+        Minimal greeting: school identity + consent question. The parent
+        name, child name, and call reason are NOT mentioned in the
+        greeting — they belong in the scenario opening (the agent's
+        SECOND turn, after the parent confirms a good time to talk).
 
-        addr = f"{record.salutation} {record.parent_name}"
-        if record.status == "PAID_IN_FULL":
-            return (
-                f"Namaste {addr}. This is calling from {company} "
-                f"about {record.child_name}'s school fees. "
-                "Is this a good time to speak, sir?"
-            )
-        if record.status == "PARTIAL":
-            return (
-                f"Namaste {addr}. This is calling from {company} "
-                f"about {record.child_name}'s fees for this term. "
-                "Is this a good time to speak, sir?"
-            )
-        # UNPAID
+        User directive (2026-04-30): "too many words in the beginning…
+        calling from jaya school is this a good time to talk to you
+        sir." Greeting is now ≤14 words regardless of whether the
+        record is loaded.
+        """
+        # Use the short school name (drops ", Suryapet") — the parent
+        # already knows which school's voice they expect.
+        short_name = self.config.company_name.split(",")[0].strip()
         return (
-            f"Namaste {addr}. This is calling from {company} "
-            f"regarding {record.child_name}'s school fees. "
-            "Is this a good time to speak, sir?"
+            f"Namaste sir. Calling from {short_name}. "
+            "Is this a good time to talk, sir?"
         )
 
     # ------------------------------------------------------------------

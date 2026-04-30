@@ -237,16 +237,10 @@ class ProductionPipeline:
         self._last_caller_speech_at[session_id] = 0.0
         self._caller_word_history[session_id] = []
         self._dynamic_max_words[session_id] = _MAX_AGENT_TURN_WORDS
-        # Per-session floor: higher when no parent record loaded so the
-        # agent can be informative in honest fallback turns.
-        has_record = (
-            hasattr(receptionist, "session_has_record")
-            and receptionist.session_has_record(session_id)
-        )
-        self._session_budget_floor[session_id] = (
-            self._BUDGET_FLOOR_WITH_RECORD if has_record
-            else self._BUDGET_FLOOR_NO_RECORD
-        )
+        # Per-session floor is computed AFTER receptionist.handle_call_start
+        # populates the record dict (see below). Initialise to a safe
+        # default in the meantime.
+        self._session_budget_floor[session_id] = self._BUDGET_FLOOR_WITH_RECORD
 
         # Start streaming STT connection — patience knobs are env-driven
         # per ADR-013/DFS-007. Suryapet defaults: endpointing 400 ms,
@@ -271,10 +265,31 @@ class ProductionPipeline:
         )
         self._streaming_stts[session_id] = stt
 
-        # Generate greeting
+        # Generate greeting (this also populates the receptionist's
+        # parent record cache, so the floor lookup below is correct).
         with self.latency.measure("greeting"):
             greeting_text = await receptionist.handle_call_start(session_id, caller, called)
             greeting_audio = await self._synthesize_to_ulaw(greeting_text, emotion_tone=None)
+
+        # Now that handle_call_start has run, the parent record (if any)
+        # is loaded. Set the per-session budget floor: higher when no
+        # record is loaded so honest fallback turns ("I don't have your
+        # record, may I take down your child's name?", ~14 words) fit
+        # without being clipped to a 6-word stub.
+        has_record = (
+            hasattr(receptionist, "session_has_record")
+            and receptionist.session_has_record(session_id)
+        )
+        self._session_budget_floor[session_id] = (
+            self._BUDGET_FLOOR_WITH_RECORD if has_record
+            else self._BUDGET_FLOOR_NO_RECORD
+        )
+        logger.info(
+            "session_budget_floor_set",
+            session_id=session_id,
+            has_record=has_record,
+            floor=self._session_budget_floor[session_id],
+        )
 
         if send_callback:
             self._is_speaking[session_id] = True
