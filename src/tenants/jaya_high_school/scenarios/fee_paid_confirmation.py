@@ -13,37 +13,45 @@ from src.tenants.jaya_high_school.honorifics import thanks, vocative
 from src.tenants.jaya_high_school.scenarios.base import Scenario
 
 
-def _opening(record: ParentRecord) -> str:
-    """
-    Scenario opening fires AFTER the parent's "Cheppandi" / "Yes" /
-    invitation in turn 2. The greeting was just "Namaskaaram {name}
-    Garu" — no intent stated yet — so this turn LEADS with the intent
-    (Telangana phone-etiquette flow per user directive 2026-04-30).
-    """
+def _intent_summary(record: ParentRecord) -> str:
+    """Turn 3: name + intent. Pause after this for parent's avuna/ok."""
+    is_telugu = (record.language_preference or "").strip().lower() == "telugu"
+    if is_telugu:
+        return (
+            f"{record.parent_name} garu, {record.child_name} school fees "
+            f"ayipoyindhi ani clarify cheyyadaniki call chesam, andi."
+        )
+    return (
+        f"Calling about {record.child_name}'s school fees, sir. "
+        "I have a brief update."
+    )
+
+
+def _intent_details(record: ParentRecord) -> str:
+    """Turn 5: verified-record details + thanks (after parent's acknowledgment)."""
     is_telugu = (record.language_preference or "").strip().lower() == "telugu"
     last = record.payments[-1] if record.payments else None
     paid_str = f"₹{record.term_fee_total_inr:,}"
-
     if is_telugu:
-        on_date = f" {last.date} na" if last else ""
-        # Natural Telangana register per user feedback (2026-04-30):
-        # use "X ayipoyindhi ani clarify cheyyadaniki call chesam, andi"
-        # — past-tense "we called", "andi" politeness particle alternated
-        # with "{name} garu" address. Avoids the textbook-formal feel of
-        # "gurinchi call chesthunna" + repeated "Garu".
+        on_date = f", {last.date} na" if last else ""
         return (
-            f"{record.parent_name} garu, {record.child_name} school fees "
-            f"ayipoyindhi ani clarify cheyyadaniki call chesam, andi. "
-            f"Term fee {paid_str},{on_date} fully paid ayyindi. "
+            f"Term fee {paid_str}{on_date} fully paid ayyindi. "
             f"Dhanyavaadalu mee prompt payment ki, andi."
         )
-
     on_date = f" on {last.date}" if last else ""
     return (
-        f"Calling about {record.child_name}'s school fees, sir. "
         f"The term fee of {paid_str} has been received in full{on_date}. "
         "Thank you for your prompt payment."
     )
+
+
+def _opening(record: ParentRecord) -> str:
+    """
+    Backwards-compat full opening (summary + details concatenated).
+    Two-stage delivery (preferred) uses _intent_summary + _intent_details
+    rendered as separate turn-3 / turn-5 verbatim directives.
+    """
+    return f"{_intent_summary(record)} {_intent_details(record)}"
 
 
 def _closing(record: ParentRecord) -> str:
@@ -118,4 +126,6 @@ SCENARIO = Scenario(
     ),
     post_intent_pivot=_pivot,
     post_intent_news_offer=_news_offer,
+    intent_summary=_intent_summary,
+    intent_details=_intent_details,
 )

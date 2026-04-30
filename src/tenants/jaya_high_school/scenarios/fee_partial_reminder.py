@@ -13,25 +13,36 @@ from src.tenants.jaya_high_school.honorifics import thanks, vocative
 from src.tenants.jaya_high_school.scenarios.base import Scenario
 
 
-def _opening(record: ParentRecord) -> str:
-    """Lead with intent (turn 3 of the cheppandi-pattern flow)."""
+def _intent_summary(record: ParentRecord) -> str:
     is_telugu = (record.language_preference or "").strip().lower() == "telugu"
-    paid = f"₹{record.fee_paid_total_inr:,}"
-    balance = f"₹{record.fee_balance_inr:,}"
-
     if is_telugu:
         return (
             f"{record.parent_name} garu, {record.child_name} school fees "
-            f"gurinchi maatladaaniki call chesam, andi. "
+            f"gurinchi maatladaaniki call chesam, andi."
+        )
+    return (
+        f"Calling about {record.child_name}'s school fees, sir. "
+        "I have a brief update on the balance."
+    )
+
+
+def _intent_details(record: ParentRecord) -> str:
+    is_telugu = (record.language_preference or "").strip().lower() == "telugu"
+    paid = f"₹{record.fee_paid_total_inr:,}"
+    balance = f"₹{record.fee_balance_inr:,}"
+    if is_telugu:
+        return (
             f"{paid} paid ayyindi already; balance {balance} pending undi, "
             f"due {record.fee_due_date} ki andi."
         )
-
     return (
-        f"Calling about {record.child_name}'s school fees, sir. "
         f"{paid} has been paid; a balance of {balance} remains for "
         f"{record.term_label}, due by {record.fee_due_date}."
     )
+
+
+def _opening(record: ParentRecord) -> str:
+    return f"{_intent_summary(record)} {_intent_details(record)}"
 
 
 def _closing(record: ParentRecord) -> str:
@@ -84,4 +95,6 @@ SCENARIO = Scenario(
         "'I understand sir. May the office call you back at a better time?'"
     ),
     post_intent_news_offer=_news_offer,
+    intent_summary=_intent_summary,
+    intent_details=_intent_details,
 )

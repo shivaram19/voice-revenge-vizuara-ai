@@ -14,19 +14,25 @@ from src.tenants.jaya_high_school.honorifics import thanks, vocative
 from src.tenants.jaya_high_school.scenarios.base import Scenario
 
 
-def _opening(record: ParentRecord) -> str:
-    """Lead with intent (turn 3 of the cheppandi-pattern flow)."""
+def _intent_summary(record: ParentRecord) -> str:
     is_telugu = (record.language_preference or "").strip().lower() == "telugu"
     if is_telugu:
         return (
             f"{record.parent_name} garu, {record.child_name} admission "
-            f"gurinchi update share cheyyadaniki call chesam, andi. "
-            f"Cheppanaa andi?"
+            f"gurinchi update share cheyyadaniki call chesam, andi."
         )
-    return (
-        f"Calling about {record.child_name}'s admission inquiry, sir. "
-        f"May I share an update?"
-    )
+    return f"Calling about {record.child_name}'s admission inquiry, sir."
+
+
+def _intent_details(record: ParentRecord) -> str:
+    is_telugu = (record.language_preference or "").strip().lower() == "telugu"
+    if is_telugu:
+        return "Mee inquiry pi update undi andi. Cheppanaa?"
+    return "I have an update on your inquiry. May I share?"
+
+
+def _opening(record: ParentRecord) -> str:
+    return f"{_intent_summary(record)} {_intent_details(record)}"
 
 
 def _closing(record: ParentRecord) -> str:
@@ -99,4 +105,6 @@ SCENARIO = Scenario(
     ),
     post_intent_pivot=_pivot,
     post_intent_news_offer=_news_offer,
+    intent_summary=_intent_summary,
+    intent_details=_intent_details,
 )

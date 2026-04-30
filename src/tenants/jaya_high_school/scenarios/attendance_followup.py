@@ -15,20 +15,31 @@ from src.tenants.jaya_high_school.honorifics import thanks, vocative
 from src.tenants.jaya_high_school.scenarios.base import Scenario
 
 
-def _opening(record: ParentRecord) -> str:
-    """Lead with intent + care (turn 3 of cheppandi-pattern flow). Sensitive."""
+def _intent_summary(record: ParentRecord) -> str:
     is_telugu = (record.language_preference or "").strip().lower() == "telugu"
     if is_telugu:
         return (
             f"{record.parent_name} garu, {record.child_name} gurinchi "
-            f"oka chinna question andi. Konni rojulu ga school ki "
-            "raavatam ledu. Intlo anni alright na andi?"
+            f"oka chinna question andi."
+        )
+    return f"Calling about {record.child_name}, sir."
+
+
+def _intent_details(record: ParentRecord) -> str:
+    is_telugu = (record.language_preference or "").strip().lower() == "telugu"
+    if is_telugu:
+        return (
+            "Konni rojulu ga school ki raavatam ledu. "
+            "Intlo anni alright na andi?"
         )
     return (
-        f"Calling about {record.child_name}, sir. "
         f"We have not seen {record.child_name} in school for a few days. "
         f"Is everything alright at home?"
     )
+
+
+def _opening(record: ParentRecord) -> str:
+    return f"{_intent_summary(record)} {_intent_details(record)}"
 
 
 def _closing(record: ParentRecord) -> str:
@@ -89,4 +100,6 @@ SCENARIO = Scenario(
         "bye",
         "goodbye",
     ),
+    intent_summary=_intent_summary,
+    intent_details=_intent_details,
 )

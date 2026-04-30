@@ -15,24 +15,32 @@ from src.tenants.jaya_high_school.honorifics import thanks, vocative
 from src.tenants.jaya_high_school.scenarios.base import Scenario
 
 
-def _opening(record: ParentRecord) -> str:
-    """Lead with intent (turn 3 of the cheppandi-pattern flow)."""
+def _intent_summary(record: ParentRecord) -> str:
     is_telugu = (record.language_preference or "").strip().lower() == "telugu"
-    total = f"₹{record.term_fee_total_inr:,}"
-
     if is_telugu:
         return (
             f"{record.parent_name} garu, {record.child_name} school fees "
-            f"gurinchi maatladaaniki call chesam, andi. "
+            f"gurinchi maatladaaniki call chesam, andi."
+        )
+    return f"Calling about {record.child_name}'s school fees, sir."
+
+
+def _intent_details(record: ParentRecord) -> str:
+    is_telugu = (record.language_preference or "").strip().lower() == "telugu"
+    total = f"₹{record.term_fee_total_inr:,}"
+    if is_telugu:
+        return (
             f"{record.term_label} ki {total} due undi, "
             f"{record.fee_due_date} ki. Em question unda andi?"
         )
-
     return (
-        f"Calling about {record.child_name}'s school fees, sir. "
         f"For {record.term_label}, the amount of {total} is due "
         f"by {record.fee_due_date}. May I help with any question?"
     )
+
+
+def _opening(record: ParentRecord) -> str:
+    return f"{_intent_summary(record)} {_intent_details(record)}"
 
 
 def _closing(record: ParentRecord) -> str:
@@ -73,4 +81,6 @@ SCENARIO = Scenario(
         "- Close within 4-5 turns; do not extend the call once the parent "
         "has said they will follow up."
     ),
+    intent_summary=_intent_summary,
+    intent_details=_intent_details,
 )

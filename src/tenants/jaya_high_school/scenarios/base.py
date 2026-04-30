@@ -44,6 +44,16 @@ class Scenario:
     opening_line: Callable[[ParentRecord], str]
     closing_line: Callable[[ParentRecord], str]
     posture_note: str
+    # Two-stage opening (DFS-011 §… pattern, user directive 2026-04-30):
+    # Telangana phone register delivers the call's intent in two turns —
+    # turn 3 states the *purpose* and pauses; turn 5 (after the parent's
+    # acknowledgment "avuna"/"sare"/"ok") delivers the *details*. This
+    # mirrors how a real Suryapet school admin would call a parent. The
+    # opening_line callable above remains for back-compat (returns the
+    # concatenation if needed); intent_summary + intent_details replace
+    # it for runtime rendering.
+    intent_summary: Optional[Callable[[ParentRecord], str]] = None
+    intent_details: Optional[Callable[[ParentRecord], str]] = None
     success_signals: tuple[str, ...] = (
         "thank you",
         "thanks",
@@ -63,6 +73,19 @@ class Scenario:
 
     def render_opening(self, record: ParentRecord) -> str:
         return self.opening_line(record)
+
+    def render_intent_summary(self, record: ParentRecord) -> str:
+        """Turn-3 line: name + intent (pause and wait after this)."""
+        if self.intent_summary is not None:
+            return self.intent_summary(record)
+        # Fallback: if no two-stage split, summary == full opening.
+        return self.opening_line(record)
+
+    def render_intent_details(self, record: ParentRecord) -> str:
+        """Turn-5 line: verified data + thanks (delivered after parent's avuna/ok)."""
+        if self.intent_details is not None:
+            return self.intent_details(record)
+        return ""
 
     def render_closing(self, record: ParentRecord) -> str:
         return self.closing_line(record)

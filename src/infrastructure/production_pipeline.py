@@ -733,13 +733,14 @@ class ProductionPipeline:
     _BUDGET_FLOOR_NO_RECORD = 12
     # Backwards-compat constant (some smoke-test scripts import it).
     _BUDGET_FLOOR = _BUDGET_FLOOR_WITH_RECORD
-    # The scenario *opening* turn (1st substantive agent reply after the
-    # parent's consent) MUST convey the verified-record confirmation in
-    # full — that is the *reason for the call*. Adapting the opening to
-    # match a 1-word "Yes" caller would clip the only content the parent
-    # actually needs to hear. So the opening turn always uses the full
-    # MAX_AGENT_TURN_WORDS; the budget mirror kicks in from turn 2.
-    _OPENING_TURN_INDEX = 0  # before any LLM turn has run
+    # The scenario *opening turns* (the two-stage delivery — turn-3
+    # SUMMARY and turn-5 DETAILS in the cheppandi flow) MUST convey
+    # the verified-record content in full. Adapting them to a 1-word
+    # "Cheppandi" / "Avuna" would clip the only content the parent
+    # actually needs to hear. So the first TWO LLM turns always use
+    # the full MAX_AGENT_TURN_WORDS budget; the budget mirror kicks
+    # in from turn 3 (post-details).
+    _OPENING_TURN_INDEX = 1  # cover both summary (turn 0) and details (turn 1)
 
     def _adapt_turn_budget(self, session_id: str, caller_text: str) -> None:
         """

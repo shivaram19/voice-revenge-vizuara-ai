@@ -95,18 +95,31 @@ class Tenant:
             # in the prompt with explicit "speak this verbatim"
             # framing nudges the model to honour the regional register.
             if scenario is not None:
-                opening = scenario.render_opening(record)
+                summary = scenario.render_intent_summary(record)
+                details = scenario.render_intent_details(record)
                 closing = scenario.render_closing(record)
                 chunks.append(
-                    "## SUGGESTED FIRST REPLY — speak verbatim (or "
-                    "near-verbatim) AFTER the parent's first response\n"
-                    "(this is the Telangana-register opening for this "
-                    "scenario; do not paraphrase it into plain English):\n\n"
-                    f"\"{opening}\""
+                    "## TURN 3 — SPEAK VERBATIM AFTER THE PARENT'S "
+                    "\"Cheppandi\" / \"Yes\" / \"Hello\"\n"
+                    "(Telangana-register intent SUMMARY; pause and let "
+                    "the parent acknowledge before continuing — do NOT "
+                    "deliver the details in this same turn):\n\n"
+                    f"\"{summary}\""
                 )
+                if details:
+                    chunks.append(
+                        "## TURN 5 — SPEAK VERBATIM AFTER THE PARENT'S "
+                        "ACKNOWLEDGMENT (\"Avuna\" / \"Sare\" / \"OK\" / "
+                        "\"Yes\" / silence-then-listening)\n"
+                        "(Telangana-register intent DETAILS; verified "
+                        "data + thanks; do NOT paraphrase into plain "
+                        "English):\n\n"
+                        f"\"{details}\""
+                    )
                 chunks.append(
-                    "## SUGGESTED CLOSING — speak when the parent "
-                    "signals wrap-up\n"
+                    "## SUGGESTED CLOSING — speak when intent has been "
+                    "delivered AND the parent signals wrap-up. After "
+                    "this line, the call ends; do not extend further.\n"
                     f"\"{closing}\""
                 )
         else:
