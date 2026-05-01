@@ -63,3 +63,5 @@ models/
 
 # Call recordings (runtime data, may contain PII)
 recordings/
+frontend/.next/
+frontend/node_modules/
