@@ -1,19 +1,20 @@
 import type { ReactNode } from 'react';
-
+import { Inter } from "next/font/google";
+import { cn } from "@/lib/utils";
 import './globals.css';
 
+const inter = Inter({subsets:['latin'],variable:'--font-sans'});
+
 export const metadata = {
-  title: 'Voice CRM Cockpit',
-  description: 'Slack-inspired CRM board for live voice operations'
+  title: 'Voice CRM',
+  description: 'Multi-tenant Education Voice CRM'
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" className={cn("font-sans", inter.variable)}>
       <body>
-        <div className="root-shell">
-          {children}
-        </div>
+        {children}
       </body>
     </html>
   );
