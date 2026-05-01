@@ -56,6 +56,8 @@ from src.infrastructure.telemetry import (
     log_exception,
     log_voice_event,
 )
+from src.infrastructure.call_state import CallStateManager
+from src.api.gateway.db import GatewayDB, CallLog
 
 logger = get_logger("api.websocket")
 tracer = get_tracer()
@@ -140,6 +142,41 @@ async def handle_twilio_websocket(websocket: WebSocket, call_sid: str):
                         explicit_domain or "auto",
                     )
 
+                    # Register with gateway for frontend observability
+                    call_state = CallStateManager()
+                    await call_state.register_call(
+                        call_sid=actual_call_sid,
+                        student_name=None,
+                        parent_name=None,
+                        parent_phone=effective_called,
+                        call_type=explicit_domain or "inbound",
+                        metadata={
+                            "from_number": metadata.from_number,
+                            "to_number": metadata.to_number,
+                            "domain": explicit_domain or "auto",
+                            "language": explicit_language,
+                        },
+                    )
+                    # Persist call log
+                    try:
+                        gw_db = GatewayDB()
+                        gw_db.create_call_log(CallLog(
+                            id=None,
+                            call_sid=actual_call_sid,
+                            tenant_id="lincoln-high",
+                            student_id=None,
+                            domain=explicit_domain or "inbound",
+                            direction="inbound",
+                            phone_to=effective_called,
+                            phone_from=metadata.from_number,
+                            status="in-progress",
+                            call_type=explicit_domain or "general",
+                            duration_seconds=0,
+                            transcript_summary=None,
+                        ))
+                    except Exception as db_err:
+                        logger.warning("gateway_db_call_start_failed", error=str(db_err))
+
                     if pipeline:
                         await pipeline.on_call_start(
                             session_id,
@@ -180,6 +217,20 @@ async def handle_twilio_websocket(websocket: WebSocket, call_sid: str):
                                 turns=turn_count,
                             )
                     log_call_end(session_id, turn_count, duration)
+
+                    # Finalize gateway call state
+                    try:
+                        call_state = CallStateManager()
+                        finalized = await call_state.finalize_call(session_id, status="completed")
+                        if finalized:
+                            gw_db = GatewayDB()
+                            gw_db.update_call_log(session_id, {
+                                "status": "completed",
+                                "duration_seconds": finalized.duration_seconds,
+                                "ended_at": finalized.ended_at.isoformat() if finalized.ended_at else None,
+                            })
+                    except Exception as gw_err:
+                        logger.warning("gateway_finalize_failed", error=str(gw_err))
                     break
 
         except WebSocketDisconnect:

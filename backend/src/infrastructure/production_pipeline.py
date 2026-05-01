@@ -83,6 +83,7 @@ from src.infrastructure.telemetry import (
     log_voice_event,
 )
 from src.infrastructure.language_detector import detect_language
+from src.infrastructure.call_state import CallStateManager
 
 logger = get_logger("pipeline.production")
 
@@ -381,6 +382,15 @@ class ProductionPipeline:
                 confidence=event.confidence,
             )
 
+            # Emit to gateway call state for frontend observability
+            try:
+                state = CallStateManager()
+                asyncio.create_task(
+                    state.append_transcript(session_id, speaker="user", text=event.text, timestamp_ms=int(time.time() * 1000))
+                )
+            except Exception as cs_err:
+                logger.debug("call_state_append_failed", error=str(cs_err))
+
             # Detect language on first substantive final transcript
             if not self._detected_languages.get(session_id):
                 lang = detect_language(event.text)
@@ -536,6 +546,16 @@ class ProductionPipeline:
                 response=response_text[:200],
                 latency_ms=round(llm_latency_ms, 1),
             )
+
+            # Emit agent response to gateway call state
+            try:
+                state = CallStateManager()
+                asyncio.create_task(
+                    state.append_transcript(session_id, speaker="agent", text=response_text, timestamp_ms=int(time.time() * 1000))
+                )
+            except Exception as cs_err:
+                logger.debug("call_state_agent_append_failed", error=str(cs_err))
+
             log_llm_response(
                 session_id=session_id,
                 response_text=response_text,
