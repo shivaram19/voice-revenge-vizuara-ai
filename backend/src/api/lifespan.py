@@ -151,6 +151,15 @@ async def lifespan(app: FastAPI):
         )
         logger.info("prod_mode_active")
 
+    # Seed gateway database with demo data for frontend
+    try:
+        from src.api.gateway.db import GatewayDB
+        gw_db = GatewayDB()
+        gw_db.seed_demo_data()
+        logger.info("gateway_db_seeded")
+    except Exception as seed_err:
+        logger.warning("gateway_db_seed_failed", error=str(seed_err))
+
     logger.info("voice_agent_started")
     if not demo_mode:
         logger.info(
