@@ -63,3 +63,10 @@ models/
 
 # Call recordings (runtime data, may contain PII)
 recordings/
+
+# Next.js
+.next/
+out/
+.vercel/
+
+node_modules/
