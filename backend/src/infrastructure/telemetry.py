@@ -104,18 +104,27 @@ def init_telemetry(service_name: str = "voice-agent-api") -> Dict[str, Any]:
     # FastAPI instrumentation MUST remain disabled: it wraps ASGI WebSocket
     # handlers and force-closes connections after ~600 ms of "idle" time
     # while TTS is synthesizing [^OT2]. See DFS-006 and ADR-012.
-    cam(
-        connection_string=conn_str,
-        resource=resource,
-        enable_live_metrics=True,
-        disable_offline_storage=False,
-        sampling_ratio=1.0,  # Full sampling for compliance debugging [^PCI]
-        instrumentation_options={
-            "fastapi": {"enabled": False},   # Disables ASGI WS interference [^OT2]
-            "urllib3": {"enabled": True},    # HTTP client tracing [^AM1]
-            "requests": {"enabled": True},   # HTTP client tracing [^AM1]
-        },
-    )
+    try:
+        cam(
+            connection_string=conn_str,
+            resource=resource,
+            enable_live_metrics=True,
+            disable_offline_storage=False,
+            sampling_ratio=1.0,  # Full sampling for compliance debugging [^PCI]
+            instrumentation_options={
+                "fastapi": {"enabled": False},   # Disables ASGI WS interference [^OT2]
+                "urllib3": {"enabled": True},    # HTTP client tracing [^AM1]
+                "requests": {"enabled": True},   # HTTP client tracing [^AM1]
+            },
+        )
+    except Exception:
+        # Telemetry must never break the application — defensive coding [^HM1]
+        logger = get_logger("telemetry")
+        logger.warning("azure_monitor_init_failed", connection_string_present=True)
+        _tracer = trace.get_tracer(service_name)
+        _meter = metrics.get_meter(service_name)
+        _initialized = True
+        return {"tracer": _tracer, "meter": _meter, "enabled": False}
 
     _tracer = trace.get_tracer(service_name)
     _meter = metrics.get_meter(service_name)
