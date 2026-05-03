@@ -44,6 +44,9 @@ class Scenario:
     opening_line: Callable[[ParentRecord], str]
     closing_line: Callable[[ParentRecord], str]
     posture_note: str
+    # Consent line (user directive 2026-05-02): ask permission before
+    # stating intent. Optional — falls back to generic consent if None.
+    consent_line: Optional[Callable[[ParentRecord], str]] = None
     # Two-stage opening (DFS-011 §… pattern, user directive 2026-04-30):
     # Telangana phone register delivers the call's intent in two turns —
     # turn 3 states the *purpose* and pauses; turn 5 (after the parent's
@@ -73,6 +76,12 @@ class Scenario:
 
     def render_opening(self, record: ParentRecord) -> str:
         return self.opening_line(record)
+
+    def render_consent(self, record: ParentRecord) -> str:
+        """Turn-2 line: ask permission before stating intent."""
+        if self.consent_line is not None:
+            return self.consent_line(record)
+        return "Is this a good time to talk, sir?"
 
     def render_intent_summary(self, record: ParentRecord) -> str:
         """Turn-3 line: name + intent (pause and wait after this)."""

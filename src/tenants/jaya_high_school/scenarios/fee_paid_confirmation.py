@@ -4,60 +4,51 @@ Scenario: Fee Paid In Full — Supportive Confirmation
 Most common production flow. The parent has already paid for the
 current term. Job: confirm warmly, thank, and close. Do NOT ask for
 money. Do NOT pitch new courses. Aim for ≤4 turns end-to-end.
+
+Ref: DFS-013 (telephone conversation structure for institutional calls);
+     user ground-truth feedback 2026-05-02 (Shiv Ram, Suryapet).
 """
 
 from __future__ import annotations
 
 from src.domains.education.parent_registry import ParentRecord
-from src.tenants.jaya_high_school.honorifics import thanks, vocative
 from src.tenants.jaya_high_school.scenarios.base import Scenario
+
+
+def _consent(record: ParentRecord) -> str:
+    """
+    Turn 2 (after parent says 'cheppandi'): ask permission before
+    revealing the call's purpose.
+
+    Per user directive 2026-05-02: explicit consent-seeking.
+    """
+    return "Is this a good time to talk to you, sir?"
 
 
 def _intent_summary(record: ParentRecord) -> str:
     """
-    Turn 3: name + intent + thank-you tail (one sentence). The ground-
-    truth Suryapet script (user directive 2026-04-30) collapses summary
-    + thanks into a single agent turn — no separate "details" stage by
-    default. After this, the agent waits ~3 seconds; if the parent
-    doesn't respond, the auto-close fires.
+    Turn 4 (after parent confirms a good time): state the fee status
+    and purpose in one concise sentence.
+
+    Per user directive 2026-05-02: natural spoken Telangana register.
+    "kattesaru" = honorific past "have paid."
     """
-    is_telugu = (record.language_preference or "").strip().lower() == "telugu"
-    if is_telugu:
-        # Verbatim Suryapet register from telangana_actual_register memory.
-        # "kattesaru" = honorific past "have paid"; more vernacular than
-        # the earlier "ayipoyindhi" / "fully paid ayyindi" forms.
-        # "term-1" is the user's verbatim term reference; ParentRecord
-        # carries a date-range term_label, but parents speak in term
-        # numbers ("term-1", "term-2"). For the Jaya HS deployment the
-        # April-September block is term-1.
-        return (
-            f"{record.child_name} term-1 fees kattesaru ani confirm "
-            f"cheyyadaniki call chesam sir. Thank you."
-        )
+    paid_str = f"₹{record.term_fee_total_inr:,}"
     return (
-        f"Calling to confirm {record.child_name} has paid the term fees, "
-        "sir. Thank you."
+        f"Aarav term one fees kattesaru, "
+        f"confirm cheyyadaniki call chesam, sir."
     )
 
 
 def _intent_details(record: ParentRecord) -> str:
     """
-    Optional follow-up details — fired only if the parent ASKS for
-    specifics ("how much?" / "kuda enti?"). The default Suryapet flow
-    does not deliver these proactively; the parent is trusted to know.
+    Optional follow-up — fired ONLY if the parent ASKS for specifics
+    ("how much?" / "kuda enti?" / "eppudu?").
     """
-    is_telugu = (record.language_preference or "").strip().lower() == "telugu"
     last = record.payments[-1] if record.payments else None
-    paid_str = f"₹{record.term_fee_total_inr:,}"
-    if is_telugu:
-        on_date = f", {last.date} na" if last else ""
-        return (
-            f"Term fee {paid_str}{on_date} kattesaru, sir."
-        )
-    on_date = f" on {last.date}" if last else ""
-    return (
-        f"The term fee was {paid_str}{on_date}, sir."
-    )
+    if last:
+        return f"{last.date} na {last.method} lo kattesaru, sir."
+    return "Paid in full, sir."
 
 
 def _opening(record: ParentRecord) -> str:
@@ -67,15 +58,16 @@ def _opening(record: ParentRecord) -> str:
 
 def _closing(record: ParentRecord) -> str:
     """
-    Closing line, also used as the auto-close on 3-second silence after
-    the summary. Verbatim from the user's ground-truth script
-    (telangana_actual_register memory): "Thank you, have a peaceful
-    day, good day, bye."
+    Closing — offer contact, then warm close, then hang up.
+
+    Per user directive 2026-05-02:
+    "In case of any queries, contact Jaya High School, sir.
+    Have a peaceful day, sir. Bye."
     """
-    is_telugu = (record.language_preference or "").strip().lower() == "telugu"
-    if is_telugu:
-        return "Thank you, have a peaceful day. Good day, sir. Bye."
-    return "Thank you. Have a peaceful day, sir. Bye."
+    return (
+        "In case of any queries, contact Jaya High School, sir. "
+        "Have a peaceful day, sir. Bye."
+    )
 
 
 def _pivot(record: ParentRecord) -> str:
@@ -108,27 +100,36 @@ def _news_offer(record: ParentRecord) -> str:
 SCENARIO = Scenario(
     scenario_id="fee_paid_confirmation",
     objective=(
-        "Confirm that the parent's term fees are settled, thank them, "
-        "and close warmly. No new asks."
+        "Confirm that the parent's term fees of ₹15,000 are settled, "
+        "offer the school contact for queries, and close warmly. "
+        "Keep it concise.  No new asks."
     ),
     opening_line=_opening,
     closing_line=_closing,
+    consent_line=_consent,
     posture_note=(
         "## Scenario: SUPPORTIVE CONFIRMATION (fees paid in full)\n"
-        "- The parent has paid in full. The call is purely a courtesy.\n"
-        "- Lead with gratitude. Acknowledge the child by name once.\n"
-        "- Do NOT ask for any payment. Do NOT pitch new courses, batches, "
-        "or upcoming fees on this call — it would feel like a bait-and-switch.\n"
-        "- If the parent asks an unrelated question (transport, exams, school "
-        "event), answer briefly from FAQ knowledge if available, otherwise "
-        "say the office will follow up.\n"
-        "- **Default behaviour after the parent acknowledges (says thank you, "
-        "okay, bye, etc.): CLOSE WARMLY and end the call.** Do not push "
-        "additional topics. The call is theirs to extend; if they say "
-        "'anything else?', 'by the way…', or ask a question, you may "
-        "engage — but never proactively if they have not invited it.\n"
-        "- Aim to close within 3-4 turns once the parent confirms they "
-        "heard you. Don't keep them on the line out of politeness."
+        "- The parent has paid in full (₹15,000). The call is purely a "
+        "courtesy confirmation — the school wants the parent to *know* "
+        "the record is clear.\n"
+        "- **Turn 1 (greeting):** 'Namaskaaram sir, nenu Jaya High School "
+        "nunchi matlardhanam, Shivaram garu.'\n"
+        "- **Turn 2 (parent):** 'Cheppandi' / 'Haan' / 'Yes' — the "
+        "parent invites us to speak.\n"
+        "- **Turn 3 (consent):** Ask 'Is this a good time to talk to you, sir?' "
+        "WAIT for the parent to say yes. Do NOT state the intent yet.\n"
+        "- **Turn 4 (parent):** 'Yes' / 'Haan' / 'Sare' — consent given.\n"
+        "- **Turn 5 (intent):** State: 'Aarav term one fees kattesaru, "
+        "confirm cheyyadaniki call chesam, sir.' Keep it to ONE sentence. "
+        "Do NOT say 'thank you' before the parent has acknowledged anything.\n"
+        "- **Turn 6 (parent):** 'Okay, thank you' — the parent acknowledges.\n"
+        "- **Turn 7 (closing):** 'In case of any queries, contact Jaya High "
+        "School, sir. Have a peaceful day, sir. Bye.'  Then END THE CALL "
+        "from our side. Do not wait for the parent to say bye.\n"
+        "- Use 'garu' ONLY in the greeting. Use 'sir' for the rest of the call.\n"
+        "- Do NOT ask for any payment. Do NOT pitch new courses.\n"
+        "- If the parent asks an unrelated question, answer briefly from FAQ "
+        "knowledge if available, otherwise say the office will follow up."
     ),
     success_signals=(
         "thank you",

@@ -163,10 +163,14 @@ class EducationReceptionist(BaseReceptionist):
         # The reason for calling — past-tense "call chesam" — comes in
         # turn 3 after the parent's "Haa cheppandi". Synthesis stays
         # under ~3s on Bulbul.
+        # Per user directive 2026-05-02: natural Telangana greeting.
+        # "nenu ... nunchi matladthunnam" is the authentic spoken form.
+        # "garu" is used in the greeting only; the body of the call uses
+        # "sir" per the user's ground-truth preference.
         if is_telugu:
             return (
-                f"Namasthe sir, {short_name} nunchi matladthunnam, "
-                f"{record.parent_name} garu."
+                f"Namaskaaram sir, nenu {short_name} nunchi "
+                f"matladuthunnam, {record.parent_name} garu."
             )
 
         return f"Namaste sir. From {short_name}."

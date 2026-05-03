@@ -95,12 +95,20 @@ class Tenant:
             # in the prompt with explicit "speak this verbatim"
             # framing nudges the model to honour the regional register.
             if scenario is not None:
+                consent = scenario.render_consent(record)
                 summary = scenario.render_intent_summary(record)
                 details = scenario.render_intent_details(record)
                 closing = scenario.render_closing(record)
                 chunks.append(
-                    "## TURN 3 — SPEAK VERBATIM AFTER THE PARENT'S "
+                    "## CONSENT — SPEAK VERBATIM AFTER THE PARENT'S "
                     "\"Cheppandi\" / \"Yes\" / \"Hello\"\n"
+                    "(Ask permission before stating intent; do NOT "
+                    "reveal the call purpose in this turn):\n\n"
+                    f"\"{consent}\""
+                )
+                chunks.append(
+                    "## TURN 5 — SPEAK VERBATIM AFTER THE PARENT CONFIRMS "
+                    "A GOOD TIME (\"Yes\" / \"Haan\" / \"Sare\" / \"Cheppandi\")\n"
                     "(Telangana-register intent SUMMARY; pause and let "
                     "the parent acknowledge before continuing — do NOT "
                     "deliver the details in this same turn):\n\n"
@@ -108,7 +116,7 @@ class Tenant:
                 )
                 if details:
                     chunks.append(
-                        "## TURN 5 — SPEAK VERBATIM AFTER THE PARENT'S "
+                        "## TURN 7 — SPEAK VERBATIM AFTER THE PARENT'S "
                         "ACKNOWLEDGMENT (\"Avuna\" / \"Sare\" / \"OK\" / "
                         "\"Yes\" / silence-then-listening)\n"
                         "(Telangana-register intent DETAILS; verified "
