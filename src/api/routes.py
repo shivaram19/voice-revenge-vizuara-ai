@@ -62,13 +62,16 @@ async def twilio_inbound(request: Request) -> Response:
 
     # Support explicit domain routing via query parameter for outbound calls.
     # Outbound calls initiated via REST API may not include caller/callee
-    # metadata in the Media Streams start event, so we pass domain explicitly
-    # as a custom parameter [^43].
+    # metadata in the Media Streams start event, so we pass domain and
+    # parent_phone explicitly as custom parameters [^43].
     query = request.query_params
     domain_param = query.get("domain", "")
+    parent_phone_param = query.get("parent_phone", "")
     custom_params = f'<Parameter name="direction" value="inbound"/>'
     if domain_param:
         custom_params += f'\n            <Parameter name="domain" value="{domain_param}"/>'
+    if parent_phone_param:
+        custom_params += f'\n            <Parameter name="parent_phone" value="{parent_phone_param}"/>'
 
     # No <Say> introduction — the AI greeting is the first audio the caller
     # hears, ensuring a single uniform voice (Deepgram Aura) throughout.
