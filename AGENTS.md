@@ -75,6 +75,51 @@ All architectural decisions must follow the **Research-First Covenant** defined 
 4. **The 10-Persona Filter applies to every change.** Each persona demands specific evidence (see `design-principles.md`).
 5. **Anti-patterns are architectural malpractice.** "Just use X, everyone does" / "The docs say it's fast" / "We'll fix it in production" are instant violations.
 
+## Consensus Protocol (Mandatory)
+
+Before ANY non-trivial action, the **Council of Ten** convenes. This is not optional. No code is written before consensus.
+
+**Load the skill:** `consensus-protocol` — or read `~/.kimi/skills/consensus-protocol/SKILL.md`
+
+### When the Council Convenes
+
+- Writing or modifying code (>5 lines)
+- Architectural decisions
+- Adding/removing dependencies
+- Production deployments
+- Interface changes
+- Configuration changes
+
+### The Ten Personas
+
+1. **Research Scientist** — Cites sources, challenges evidence quality
+2. **First-Principles Engineer** — Derives from axioms, questions assumptions
+3. **Distributed Systems Architect** — Scalability, state machine correctness
+4. **Infrastructure-First SRE** — Observability, metrics, rollback plans
+5. **Diagnostic Problem-Solver** — Root cause, edge cases, failure modes
+6. **Ethical Technologist** — Trust, privacy, human impact
+7. **Resource Strategist** — TCO, latency, cost-benefit
+8. **Curious Explorer** — Experiments, unknown unknowns
+9. **Clarity-Driven Communicator** — ADRs, documentation, commit quality
+10. **Inner-Self Guided Builder** — Is this the right thing to build?
+
+### The Protocol
+
+1. **Proposal** — State what, why, and risk level
+2. **Deliberation** — Each persona raises concerns or endorsements asynchronously
+3. **Blocking Check** — Any blocking concern rejects the Proposal
+4. **Consensus Round** — Address non-blocking concerns
+5. **Final Decision** — Approved / Rejected / Deferred
+6. **Documentation** — ADR + decision log + commit message
+
+A decision is only valid when documented at `docs/decisions/DECISION-[YYYYMMDD]-[NNN]-[topic].md`
+
+### Override
+
+The user may override a block by stating: *"I accept the risk of [concern] and want to proceed."* This is recorded as **User Override**.
+
+---
+
 ## Decision Authority
 
 When in doubt:
@@ -83,9 +128,10 @@ When in doubt:
 3. Prefer stateless services over stateful ones.
 4. Prefer event-driven over synchronous RPC for cross-service communication.
 5. **Prefer research-backed decisions over intuition.** Cite before you commit.
+6. **Prefer Council consensus over individual judgment.** Debate before you build.
 
 ---
 
-*Document version: 1.1*  
+*Document version: 2.0*  
 *Established: 2026-04-25*  
-*Updated: 2026-04-27 (Research-First Covenant added)*
+*Updated: 2026-05-03 (Consensus Protocol added)*
