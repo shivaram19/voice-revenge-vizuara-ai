@@ -71,8 +71,15 @@ def build_twiml(
     `parent_phone` as a customParameter so the WebSocket handler can
     look up the verified parent record at on_call_start.
     """
-    # Replace placeholder with actual CallSid for session isolation
-    actual_url = websocket_url.replace("CAtest", call_sid) if "CAtest" in websocket_url else websocket_url
+    # Ensure the WebSocket URL ends with a CallSid placeholder so Twilio
+    # connects to /ws/twilio/{call_sid}. If the user passes a bare URL
+    # without CAtest we append it; otherwise we substitute the real SID.
+    if "CAtest" in websocket_url:
+        actual_url = websocket_url.replace("CAtest", call_sid)
+    elif websocket_url.rstrip("/").endswith("/ws/twilio"):
+        actual_url = f"{websocket_url.rstrip('/')}/{call_sid}"
+    else:
+        actual_url = websocket_url
     # No <Say> introduction — the AI greeting is the first audio the caller
     # hears, ensuring a single uniform voice (Deepgram Aura) throughout.
     twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
@@ -91,10 +98,11 @@ def build_twiml(
 def make_call(
     to_number: str,
     from_number: str,
-    twiml: str,
+    twiml: str | None,
     record: bool,
     recording_status_callback: str | None,
     status_callback: str | None,
+    base_url: str = "",
 ) -> str:
     """
     Create the outbound call via Twilio REST API.
@@ -107,8 +115,17 @@ def make_call(
     call_params = {
         "to": to_number,
         "from_": from_number,
-        "twiml": twiml,
     }
+    if twiml:
+        call_params["twiml"] = twiml
+    else:
+        # Outbound Media Streams: Twilio must POST to our endpoint to get
+        # the real CallSid in the WebSocket URL.  Pass parent_phone as a
+        # query param so /twilio/inbound can route to the right tenant.
+        # "education" is the registered domain_id for Jaya High School.
+        # The pipeline falls back to phone-number lookup if domain is "auto",
+        # but passing the explicit domain skips that lookup and is faster.
+        call_params["url"] = f"{base_url}/twilio/inbound?domain=education&parent_phone={to_number}"
 
     if record:
         call_params["record"] = True
@@ -160,10 +177,10 @@ def main() -> int:
     </Say>
 </Response>"""
     else:
-        # Placeholder twiml — actual CallSid will be inserted after call creation
-        twiml = build_twiml(
-            websocket_url, base_url, call_sid="CAtest", parent_phone=args.to
-        )
+        # Use the /twilio/inbound endpoint so Twilio POSTs to us with the
+        # real CallSid.  Inline TwiML with <Stream> works for inbound but
+        # outbound calls should use a TwiML URL for correct CallSid binding.
+        twiml = None
 
     print("=" * 60)
     print("OUTBOUND DEMO CALL")
@@ -183,6 +200,7 @@ def main() -> int:
             record=not args.no_record,
             recording_status_callback=recording_callback,
             status_callback=status_callback,
+            base_url=base_url,
         )
         # NOTE: We previously tried to update the call with a TwiML that
         # contained the real CallSid in the WebSocket URL. Twilio rejects
