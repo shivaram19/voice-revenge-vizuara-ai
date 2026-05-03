@@ -29,6 +29,7 @@ from src.api.lifespan import lifespan
 from src.api.routes import router as voice_router
 from src.api.health import router as health_router
 from src.api.metrics import router as metrics_router
+from src.api.record_ui import router as record_router
 from src.api.websockets import handle_twilio_websocket
 
 app = FastAPI(
@@ -46,6 +47,7 @@ if static_dir.exists():
 # Include API routers
 app.include_router(health_router)
 app.include_router(metrics_router)
+app.include_router(record_router)
 app.include_router(voice_router)
 
 # WebSocket endpoint

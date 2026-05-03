@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Suryapet Pronunciation Recorder</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0f172a;
+            color: #e2e8f0;
+            min-height: 100vh;
+            padding: 2rem 1rem;
+        }
+        .container { max-width: 720px; margin: 0 auto; }
+        h1 { font-size: 1.5rem; margin-bottom: 0.5rem; color: #60a5fa; }
+        .subtitle { color: #94a3b8; margin-bottom: 2rem; font-size: 0.9rem; }
+
+        .card {
+            background: #1e293b;
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 1rem;
+            border: 1px solid #334155;
+        }
+
+        .prompt-text {
+            font-size: 1.3rem;
+            font-weight: 500;
+            color: #f8fafc;
+            margin-bottom: 1rem;
+            line-height: 1.5;
+        }
+        .prompt-meta {
+            font-size: 0.8rem;
+            color: #64748b;
+            margin-bottom: 1rem;
+        }
+
+        .record-btn {
+            width: 100%;
+            padding: 1rem;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .record-btn.record {
+            background: #dc2626;
+            color: white;
+        }
+        .record-btn.record:hover { background: #b91c1c; }
+        .record-btn.stop {
+            background: #059669;
+            color: white;
+        }
+        .record-btn.stop:hover { background: #047857; }
+        .record-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .visualizer {
+            height: 60px;
+            background: #0f172a;
+            border-radius: 8px;
+            margin: 1rem 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 2px;
+            overflow: hidden;
+        }
+        .bar {
+            width: 4px;
+            background: #60a5fa;
+            border-radius: 2px;
+            transition: height 0.05s;
+        }
+        .visualizer.recording .bar {
+            background: #dc2626;
+        }
+
+        .status {
+            text-align: center;
+            font-size: 0.85rem;
+            color: #94a3b8;
+            margin-top: 0.5rem;
+            min-height: 1.2rem;
+        }
+
+        .section-title {
+            font-size: 1rem;
+            font-weight: 600;
+            color: #60a5fa;
+            margin: 2rem 0 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .section-title .badge {
+            background: #334155;
+            color: #cbd5e1;
+            font-size: 0.75rem;
+            padding: 0.15rem 0.5rem;
+            border-radius: 999px;
+        }
+
+        .recording-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+        .recording-item {
+            background: #1e293b;
+            border-radius: 8px;
+            padding: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            border: 1px solid #334155;
+        }
+        .recording-item .label {
+            flex: 1;
+            font-size: 0.9rem;
+        }
+        .recording-item .time {
+            font-size: 0.75rem;
+            color: #64748b;
+        }
+        .icon-btn {
+            background: #334155;
+            border: none;
+            color: #e2e8f0;
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1rem;
+        }
+        .icon-btn:hover { background: #475569; }
+        .icon-btn.delete { background: #7f1d1d; }
+        .icon-btn.delete:hover { background: #991b1b; }
+
+        .nav-tabs {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1.5rem;
+            overflow-x: auto;
+        }
+        .nav-tab {
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            background: #1e293b;
+            border: 1px solid #334155;
+            color: #94a3b8;
+            cursor: pointer;
+            white-space: nowrap;
+            font-size: 0.85rem;
+        }
+        .nav-tab.active {
+            background: #2563eb;
+            color: white;
+            border-color: #2563eb;
+        }
+
+        .download-all {
+            display: block;
+            width: 100%;
+            padding: 0.75rem;
+            margin-top: 1rem;
+            background: #2563eb;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            text-align: center;
+            text-decoration: none;
+        }
+        .download-all:hover { background: #1d4ed8; }
+
+        .empty-state {
+            text-align: center;
+            color: #64748b;
+            padding: 2rem;
+        }
+
+        audio { width: 200px; height: 36px; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>🎙️ Suryapet Pronunciation Recorder</h1>
+    <p class="subtitle">Record words in your natural voice. All recordings are saved to the server and can be reviewed anytime.</p>
+
+    <div class="nav-tabs" id="tabs"></div>
+
+    <div class="card">
+        <div class="prompt-meta" id="promptMeta">Word 1 of 50</div>
+        <div class="prompt-text" id="promptText">Namaskaaram</div>
+        <div class="visualizer" id="visualizer"></div>
+        <button class="record-btn record" id="recordBtn">🔴 Start Recording</button>
+        <div class="status" id="status">Click the button and speak the word above</div>
+    </div>
+
+    <div class="section-title">📁 My Recordings <span class="badge" id="countBadge">0</span></div>
+    <div class="recording-list" id="recordingList">
+        <div class="empty-state">No recordings yet. Start recording above.</div>
+    </div>
+    <a class="download-all" id="downloadAll" href="/recordings/download" style="display:none">⬇️ Download All Recordings</a>
+</div>
+
+<script>
+const WORDS = [
+    {id:"01", text:"Namaskaaram", section:"Greetings"},
+    {id:"02", text:"matladuthunnam", section:"Greetings"},
+    {id:"03", text:"Jaya High School", section:"Greetings"},
+    {id:"04", text:"Suryapet", section:"Greetings"},
+    {id:"05", text:"Nalgonda", section:"Greetings"},
+    {id:"06", text:"Hyderabad", section:"Greetings"},
+    {id:"07", text:"Telangana", section:"Greetings"},
+    {id:"08", text:"Andhra", section:"Greetings"},
+    {id:"09", text:"garu", section:"Honorifics"},
+    {id:"10", text:"sir", section:"Honorifics"},
+    {id:"11", text:"andi", section:"Honorifics"},
+    {id:"12", text:"meeku", section:"Honorifics"},
+    {id:"13", text:"meeru", section:"Honorifics"},
+    {id:"14", text:"dhanyavaadalu", section:"Honorifics"},
+    {id:"15", text:"cheppandi", section:"Actions"},
+    {id:"16", text:"cheppu", section:"Actions"},
+    {id:"17", text:"kattesaru", section:"Actions"},
+    {id:"18", text:"kattali", section:"Actions"},
+    {id:"19", text:"ayipoyindhi", section:"Actions"},
+    {id:"20", text:"confirm", section:"Actions"},
+    {id:"21", text:"call chesam", section:"Actions"},
+    {id:"22", text:"fees", section:"Actions"},
+    {id:"23", text:"term", section:"Actions"},
+    {id:"24", text:"school", section:"Actions"},
+    {id:"25", text:"avuna", section:"Responses"},
+    {id:"26", text:"sare", section:"Responses"},
+    {id:"27", text:"haan", section:"Responses"},
+    {id:"28", text:"ok", section:"Responses"},
+    {id:"29", text:"yes", section:"Responses"},
+    {id:"30", text:"thank you", section:"Responses"},
+    {id:"31", text:"noted", section:"Responses"},
+    {id:"32", text:"understood", section:"Responses"},
+    {id:"33", text:"Aarav", section:"Names"},
+    {id:"34", text:"Shiv Ram", section:"Names"},
+    {id:"35", text:"Lakshmi", section:"Names"},
+    {id:"36", text:"parent", section:"Names"},
+    {id:"37", text:"father", section:"Names"},
+    {id:"38", text:"mother", section:"Names"},
+    {id:"39", text:"paid", section:"Payments"},
+    {id:"40", text:"unpaid", section:"Payments"},
+    {id:"41", text:"partial", section:"Payments"},
+    {id:"42", text:"balance", section:"Payments"},
+    {id:"43", text:"due date", section:"Payments"},
+    {id:"44", text:"installment", section:"Payments"},
+    {id:"45", text:"ante", section:"Fillers"},
+    {id:"46", text:"endhukante", section:"Fillers"},
+    {id:"47", text:"gurinchi", section:"Fillers"},
+    {id:"48", text:"kuda", section:"Fillers"},
+    {id:"49", text:"mari", section:"Fillers"},
+    {id:"50", text:"lekapothe", section:"Fillers"},
+];
+
+let currentIndex = 0;
+let mediaRecorder = null;
+let audioChunks = [];
+let recordings = [];
+
+const promptText = document.getElementById('promptText');
+const promptMeta = document.getElementById('promptMeta');
+const recordBtn = document.getElementById('recordBtn');
+const status = document.getElementById('status');
+const visualizer = document.getElementById('visualizer');
+const recordingList = document.getElementById('recordingList');
+const countBadge = document.getElementById('countBadge');
+const downloadAll = document.getElementById('downloadAll');
+
+// Build tabs
+const sections = [...new Set(WORDS.map(w => w.section))];
+const tabsEl = document.getElementById('tabs');
+sections.forEach((sec, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'nav-tab' + (i === 0 ? ' active' : '');
+    btn.textContent = sec;
+    btn.onclick = () => {
+        currentIndex = WORDS.findIndex(w => w.section === sec);
+        updatePrompt();
+        document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+        btn.classList.add('active');
+    };
+    tabsEl.appendChild(btn);
+});
+
+function updatePrompt() {
+    const w = WORDS[currentIndex];
+    promptText.textContent = w.text;
+    promptMeta.textContent = `Word ${w.id} of ${WORDS.length} — ${w.section}`;
+}
+updatePrompt();
+
+// Visualizer bars
+for (let i = 0; i < 40; i++) {
+    const bar = document.createElement('div');
+    bar.className = 'bar';
+    bar.style.height = '4px';
+    visualizer.appendChild(bar);
+}
+
+let audioContext = null;
+let analyser = null;
+let animId = null;
+
+function startVisualizer(stream) {
+    audioContext = new AudioContext();
+    const src = audioContext.createMediaStreamSource(stream);
+    analyser = audioContext.createAnalyser();
+    analyser.fftSize = 64;
+    src.connect(analyser);
+    visualizer.classList.add('recording');
+
+    const bars = visualizer.querySelectorAll('.bar');
+    const data = new Uint8Array(analyser.frequencyBinCount);
+
+    function draw() {
+        analyser.getByteFrequencyData(data);
+        for (let i = 0; i < bars.length; i++) {
+            const val = data[i % data.length];
+            bars[i].style.height = Math.max(4, val / 2) + 'px';
+        }
+        animId = requestAnimationFrame(draw);
+    }
+    draw();
+}
+
+function stopVisualizer() {
+    if (animId) cancelAnimationFrame(animId);
+    if (audioContext) audioContext.close();
+    visualizer.classList.remove('recording');
+    visualizer.querySelectorAll('.bar').forEach(b => b.style.height = '4px');
+}
+
+recordBtn.onclick = async () => {
+    if (mediaRecorder && mediaRecorder.state === 'recording') {
+        mediaRecorder.stop();
+        recordBtn.textContent = '🔴 Start Recording';
+        recordBtn.className = 'record-btn record';
+        status.textContent = 'Processing...';
+        stopVisualizer();
+        return;
+    }
+
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorder = new MediaRecorder(stream);
+        audioChunks = [];
+
+        mediaRecorder.ondataavailable = e => {
+            if (e.data.size > 0) audioChunks.push(e.data);
+        };
+
+        mediaRecorder.onstop = async () => {
+            const blob = new Blob(audioChunks, { type: 'audio/webm' });
+            await uploadRecording(blob, WORDS[currentIndex]);
+            stream.getTracks().forEach(t => t.stop());
+        };
+
+        mediaRecorder.start();
+        startVisualizer(stream);
+        recordBtn.textContent = '⏹️ Stop Recording';
+        recordBtn.className = 'record-btn stop';
+        status.textContent = 'Recording... speak now';
+    } catch (err) {
+        status.textContent = 'Microphone access denied: ' + err.message;
+    }
+};
+
+async function uploadRecording(blob, word) {
+    const form = new FormData();
+    form.append('audio', blob, `${word.id}_${word.text.replace(/\s+/g,'_')}.webm`);
+    form.append('word_id', word.id);
+    form.append('word_text', word.text);
+    form.append('section', word.section);
+
+    try {
+        const resp = await fetch('/recordings/upload', { method: 'POST', body: form });
+        if (resp.ok) {
+            status.textContent = `✅ Saved: ${word.text}`;
+            await loadRecordings();
+            // Auto-advance
+            if (currentIndex < WORDS.length - 1) {
+                currentIndex++;
+                updatePrompt();
+            }
+        } else {
+            status.textContent = '❌ Upload failed';
+        }
+    } catch (e) {
+        status.textContent = '❌ Network error: ' + e.message;
+    }
+}
+
+async function loadRecordings() {
+    try {
+        const resp = await fetch('/recordings/list');
+        recordings = await resp.json();
+        countBadge.textContent = recordings.length;
+        renderRecordings();
+        downloadAll.style.display = recordings.length > 0 ? 'block' : 'none';
+    } catch (e) {
+        console.error('Failed to load recordings', e);
+    }
+}
+
+function renderRecordings() {
+    if (recordings.length === 0) {
+        recordingList.innerHTML = '<div class="empty-state">No recordings yet. Start recording above.</div>';
+        return;
+    }
+    recordingList.innerHTML = recordings.map(r => `
+        <div class="recording-item">
+            <div class="label">${r.word_id}. ${r.word_text} <span style="color:#64748b">(${r.section})</span></div>
+            <div class="time">${r.duration_s ? r.duration_s + 's' : ''}</div>
+            <audio controls src="/recordings/file/${r.filename}"></audio>
+            <button class="icon-btn delete" onclick="deleteRecording('${r.filename}')" title="Delete">🗑</button>
+        </div>
+    `).join('');
+}
+
+async function deleteRecording(filename) {
+    if (!confirm('Delete this recording?')) return;
+    await fetch('/recordings/delete/' + filename, { method: 'DELETE' });
+    await loadRecordings();
+}
+
+// Keyboard shortcuts
+document.addEventListener('keydown', e => {
+    if (e.code === 'Space' && e.target === document.body) {
+        e.preventDefault();
+        recordBtn.click();
+    }
+    if (e.code === 'ArrowRight') {
+        if (currentIndex < WORDS.length - 1) { currentIndex++; updatePrompt(); }
+    }
+    if (e.code === 'ArrowLeft') {
+        if (currentIndex > 0) { currentIndex--; updatePrompt(); }
+    }
+});
+
+loadRecordings();
+</script>
+</body>
+</html>
