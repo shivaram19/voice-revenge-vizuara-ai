@@ -85,22 +85,29 @@ class TTSRouter:
         ssml: bool = False,
         lang_pref: str = "",
         pace: Optional[float] = None,
+        region_tag: Optional[str] = None,
     ) -> bytes:
         """
         Route the synthesise call. The `lang_pref` kwarg is the
-        addition over the per-adapter contract. `pace` is a per-call
-        override forwarded only to adapters that accept it (Sarvam
-        Bulbul); plain adapters like Deepgram ignore it.
+        addition over the per-adapter contract. `pace` and `region_tag`
+        are per-call overrides forwarded only to adapters that accept
+        them (Sarvam Bulbul, IndicF5); plain adapters like Deepgram
+        ignore them.
         """
         provider = self._routes.get((lang_pref or "").strip().lower())
         if provider is None:
             return self.default.synthesize(text, model=model, ssml=ssml)
-        # Inspect provider signature: only Sarvam currently accepts pace.
+        # Try full kwargs first (Sarvam/IndicF5 accept pace + region_tag)
         try:
-            return provider.synthesize(text, model=model, ssml=ssml, pace=pace)
+            return provider.synthesize(
+                text, model=model, ssml=ssml, pace=pace, region_tag=region_tag
+            )
         except TypeError:
-            # Provider doesn't accept pace; fall back to standard call.
-            return provider.synthesize(text, model=model, ssml=ssml)
+            # Fallback: provider doesn't accept pace/region_tag
+            try:
+                return provider.synthesize(text, model=model, ssml=ssml, pace=pace)
+            except TypeError:
+                return provider.synthesize(text, model=model, ssml=ssml)
 
     def routes_summary(self) -> Dict[str, str]:
         """For observability / logs at lifespan startup."""
