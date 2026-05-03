@@ -39,7 +39,9 @@ RUN pip install --no-cache-dir --upgrade pip \
         pydantic>=2.7.0 \
         pydantic-settings>=2.2.0 \
         azure-identity>=1.16.0 \
-        azure-keyvault-secrets>=4.8.0
+        azure-keyvault-secrets>=4.8.0 \
+        soundfile>=0.12.0 \
+        python-multipart>=0.0.9
 
 # ---------------------------------------------------------------------------
 # Production stage
@@ -53,7 +55,7 @@ RUN groupadd -r voiceagent && useradd -r -g voiceagent voiceagent
 
 # Install runtime dependencies only
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libgomp1 \
+    libgomp1 libsndfile1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy installed Python packages from builder
@@ -63,6 +65,10 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 # Copy application source
 COPY src/ ./src/
 COPY docker/entrypoint.agent.sh /app/entrypoint.sh
+
+# TTS audio cache + dialect corpus + recordings directories — must be writable by voiceagent.
+# Mount Azure Files here for persistence across container restarts.
+RUN mkdir -p /app/cache/tts && mkdir -p /app/dialect_corpus && mkdir -p /app/recordings && chown -R voiceagent:voiceagent /app/cache /app/dialect_corpus /app/recordings
 
 # Set ownership
 RUN chown -R voiceagent:voiceagent /app
@@ -75,6 +81,7 @@ ENV PYTHONPATH=/app
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV PORT=8000
+ENV TTS_CACHE_DIR=/app/cache/tts
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"
