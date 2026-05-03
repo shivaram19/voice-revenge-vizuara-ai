@@ -127,14 +127,28 @@ _FILLER_TEXT = _FILLER_TEXT_EN
 
 # Stage names for cached scenario flow (user directive 2026-04-30)
 _STAGE_EXPECT_INVITATION = "expect_invitation"
+_STAGE_EXPECT_CONSENT_ACK = "expect_consent_ack"
 _STAGE_EXPECT_SUMMARY_ACK = "expect_summary_ack"
 _STAGE_EXPECT_DETAILS_ACK = "expect_details_ack"
 _STAGE_DONE = "done"
 
 # Per-stage trigger keywords (lower-cased substring match against caller transcript)
+# Consent ack: ONLY genuine affirmative signals.  Invitation words
+# ("cheppandi", "tell me", "go ahead") belong to the INVITATION stage,
+# not consent — treating them as consent makes the agent ignore what
+# the parent actually said.
+_ACK_KEYWORDS_CONSENT: tuple[str, ...] = (
+    "yes", "yeah", "haan", "sare", "ok", "okay", "avuna", "ji",
+    "right", "correct", "good time", "free",
+)
+# Explicit negative consent — parent is declining to talk.
+_NEGATIVE_KEYWORDS_CONSENT: tuple[str, ...] = (
+    "no", "not now", "busy", "can't talk", "cannot talk", "later",
+    "wrong time", "bad time", "no time", "ledu", "vaddu", "tappadu",
+)
 _ACK_KEYWORDS_SUMMARY: tuple[str, ...] = (
     "avuna", "ok", "okay", "sare", "yes", "yeah", "haan", "achha",
-    "ji", "right", "correct", "tell me", "go ahead", "cheppu", "cheppandi",
+    "ji", "right", "correct", "cheppu", "cheppandi",
     "thank you", "thanks",
 )
 _WRAPUP_KEYWORDS_DETAILS: tuple[str, ...] = (
@@ -242,7 +256,9 @@ class ProductionPipeline:
         #   expect_details_ack → on wrap-up keywords         → closing
         #   done               → no further cached responses; LLM only
         self._stage: Dict[str, str] = {}
-        self._cached_audio: Dict[str, Dict[str, bytes]] = {}
+        # Each entry: {"text": str, "audio": bytes} so we can replay the
+        # assistant turn into conversation_history when the cache hits.
+        self._cached_audio: Dict[str, Dict[str, dict]] = {}
         # Track the parent's most recent transcript word count so the
         # backchannel injection (Mhmm-andi prefix on cached replies) can
         # decide whether the parent was "passing information" — i.e. a
@@ -290,8 +306,11 @@ class ProductionPipeline:
         Returns greeting audio bytes (legacy compat).
         If send_callback is provided, greeting is also sent asynchronously.
         """
-        if domain_id:
-            resolved_id = domain_id
+        # "auto" is a Twilio placeholder meaning "resolve from phone number"
+        # or fall back to the default domain.  Treat it like an unset domain.
+        effective_domain = domain_id if domain_id and domain_id != "auto" else None
+        if effective_domain:
+            resolved_id = effective_domain
         elif called is None:
             resolved_id = self.default_domain
         else:
@@ -412,7 +431,7 @@ class ProductionPipeline:
         return None
 
     async def on_call_end(self, session_id: str) -> Optional[CallSession]:
-        """Finalize session and cleanup."""
+        """Finalize session and cleanup. Trigger post-call dialect analysis."""
         stt = self._streaming_stts.pop(session_id, None)
         if stt:
             await stt.close()
@@ -445,6 +464,42 @@ class ProductionPipeline:
             task.cancel()
 
         receptionist = self._session_receptionist.pop(session_id, None)
+
+        # ------------------------------------------------------------------
+        # Post-call dialect analysis (user directive 2026-05-02)
+        # Extract dialect markers from the parent's speech, label the
+        # call by region, and update the corpus for future refinement.
+        # ------------------------------------------------------------------
+        if receptionist is not None:
+            try:
+                from src.infrastructure.dialect_router import get_dialect_router
+                from src.infrastructure.post_call_dialect_analyzer import get_analyzer
+
+                session = getattr(receptionist, "sessions", {}).get(session_id)
+                if session and session.conversation_history:
+                    record = getattr(receptionist, "_parent_records", {}).get(session_id)
+                    router = get_dialect_router()
+                    region_tag = router.detect_region_from_record(record)
+
+                    analyzer = get_analyzer()
+                    analyzer.analyze(
+                        call_sid=session_id,
+                        region_tag=region_tag,
+                        transcript=session.conversation_history,
+                    )
+                    logger.info(
+                        "dialect_analysis_complete",
+                        session_id=session_id,
+                        region_tag=region_tag,
+                        turns=len(session.conversation_history),
+                    )
+            except Exception as exc:
+                logger.warning(
+                    "dialect_analysis_failed",
+                    session_id=session_id,
+                    error=str(exc),
+                )
+
         if receptionist is None:
             return None
         try:
@@ -981,6 +1036,10 @@ class ProductionPipeline:
         # Render scenario lines safely (any rendering failure is logged
         # and skipped — partial cache is better than no cache).
         try:
+            consent_text = scenario.render_consent(record)
+        except Exception:
+            consent_text = ""
+        try:
             summary_text = scenario.render_intent_summary(record)
         except Exception:
             summary_text = ""
@@ -1012,14 +1071,31 @@ class ProductionPipeline:
 
         cache = self._cached_audio.setdefault(session_id, {})
 
-        # Synthesise SUMMARY FIRST (sequential) so it lands in cache
+        # Helper to store both text and audio so the pipeline can replay
+        # the assistant turn into conversation_history on a cache hit.
+        def _store(key: str, text: str, audio: bytes) -> None:
+            if audio:
+                cache[key] = {"text": text, "audio": audio}
+
+        # Synthesise CONSENT FIRST (sequential) so it lands in cache
         # before the parent's first reply ("Cheppandi") arrives. The
-        # summary is the only line we need at stage 1; details + closing
-        # have ~10–20 seconds of conversation cover before they fire.
+        # consent is the only line we need at stage 1; summary + details +
+        # closing have ~15–25 seconds of conversation cover before they fire.
+        if consent_text:
+            _, consent_audio = await _synth("consent", consent_text)
+            _store("consent", consent_text, consent_audio)
+            if consent_audio:
+                logger.info(
+                    "cached_consent_ready",
+                    session_id=session_id,
+                    text_len=len(consent_text),
+                )
+
+        # Summary is needed at stage 2 — synthesise it next.
         if summary_text:
             _, summary_audio = await _synth("summary", summary_text)
+            _store("summary", summary_text, summary_audio)
             if summary_audio:
-                cache["summary"] = summary_audio
                 logger.info(
                     "cached_summary_ready",
                     session_id=session_id,
@@ -1040,13 +1116,35 @@ class ProductionPipeline:
             _synth("backchannel", backchannel_text),
         )
         for key, audio in rest:
-            if audio:
-                cache[key] = audio
+            text = {
+                "details": details_text,
+                "closing": closing_text,
+                "backchannel": backchannel_text,
+            }.get(key, "")
+            _store(key, text, audio)
         logger.info(
             "cached_scenario_ready",
             session_id=session_id,
             keys=list(cache.keys()),
         )
+
+    def _record_assistant_in_history(self, session_id: str, text: str) -> None:
+        """Append an assistant turn to the receptionist's conversation history.
+
+        When the cached path dispatches pre-synthesised audio, the LLM
+        never sees that turn.  Recording it prevents the LLM from
+        regenerating the same line on a later cache-miss or off-script
+        fallback (the root cause of duplicate consent playback).
+        """
+        receptionist = self._session_receptionist.get(session_id)
+        if receptionist is None:
+            return
+        session = getattr(receptionist, "sessions", {}).get(session_id)
+        if session is None:
+            return
+        history = getattr(session, "conversation_history", None)
+        if history is not None:
+            history.append({"role": "assistant", "content": text})
 
     def _try_cached_response(self, session_id: str, transcript: str) -> bool:
         """
@@ -1070,15 +1168,38 @@ class ProductionPipeline:
         text = (transcript or "").lower()
         cache = self._cached_audio.get(session_id, {})
 
+        # Any caller speech cancels a pending auto-close — they're
+        # engaging, not silent.  Do this BEFORE keyword matching so
+        # off-script utterances also reset the timer.
+        self._cancel_auto_close(session_id)
+
         # Determine the stage transition this transcript triggers.
         next_stage: Optional[str] = None
         audio_key: Optional[str] = None
+        spoken_text: Optional[str] = None
 
         if stage == _STAGE_EXPECT_INVITATION and text.strip():
             # Any non-empty utterance after the greeting counts as
             # invitation. Common forms: cheppandi, yes, hello, namaste.
-            next_stage = _STAGE_EXPECT_SUMMARY_ACK
-            audio_key = "summary"
+            next_stage = _STAGE_EXPECT_CONSENT_ACK
+            audio_key = "consent"
+        elif stage == _STAGE_EXPECT_CONSENT_ACK:
+            # Negative consent — parent is declining.  Graceful close.
+            if any(kw in text for kw in _NEGATIVE_KEYWORDS_CONSENT):
+                logger.info(
+                    "consent_declined",
+                    session_id=session_id,
+                    transcript=text[:60],
+                )
+                self._stage[session_id] = _STAGE_DONE
+                closing = cache.get("closing")
+                if closing:
+                    self._dispatch_cached(session_id, closing["audio"], closing["text"])
+                return True
+
+            if any(kw in text for kw in _ACK_KEYWORDS_CONSENT):
+                next_stage = _STAGE_EXPECT_SUMMARY_ACK
+                audio_key = "summary"
         elif stage == _STAGE_EXPECT_SUMMARY_ACK:
             if any(kw in text for kw in _ACK_KEYWORDS_SUMMARY):
                 next_stage = _STAGE_EXPECT_DETAILS_ACK
@@ -1099,12 +1220,11 @@ class ProductionPipeline:
         # cover a previous stage because the cache was still warming up.
         self._stage[session_id] = next_stage
 
-        # Any caller speech cancels a pending auto-close — they're
-        # engaging, not silent.
-        self._cancel_auto_close(session_id)
+        entry = cache.get(audio_key) if audio_key else None
+        audio = entry.get("audio") if entry else None
+        spoken_text = entry.get("text") if entry else None
 
-        audio = cache.get(audio_key) if audio_key else None
-        if audio:
+        if audio and spoken_text:
             logger.info(
                 "cached_response_dispatched",
                 session_id=session_id,
@@ -1113,13 +1233,19 @@ class ProductionPipeline:
                 triggered_by=text[:60],
                 audio_key=audio_key,
             )
-            self._dispatch_cached(session_id, audio)
+            self._dispatch_cached(session_id, audio, spoken_text)
             # After delivering the summary, set the silence timer. If
             # the parent doesn't respond within AUTO_CLOSE_SILENCE_MS
             # we deliver the closing and terminate.
             if next_stage == _STAGE_EXPECT_SUMMARY_ACK:
                 self._schedule_auto_close(session_id)
             return True
+
+        # Stage advanced but cache miss — still record the intended
+        # assistant text in history so the LLM knows the conversation
+        # has moved forward.
+        if spoken_text:
+            self._record_assistant_in_history(session_id, spoken_text)
 
         # Stage advanced but cache miss — LLM will handle this turn,
         # subsequent turns will land on the correct cached audio.
@@ -1168,8 +1294,10 @@ class ProductionPipeline:
             return
 
         cache = self._cached_audio.get(session_id, {})
-        closing = cache.get("closing")
-        if not closing:
+        closing_entry = cache.get("closing")
+        closing_audio = closing_entry.get("audio") if closing_entry else None
+        closing_text = closing_entry.get("text") if closing_entry else None
+        if not closing_audio:
             logger.warning(
                 "auto_close_no_cached_closing",
                 session_id=session_id,
@@ -1182,9 +1310,11 @@ class ProductionPipeline:
             silence_ms=_AUTO_CLOSE_SILENCE_MS,
         )
         self._stage[session_id] = _STAGE_DONE
-        self._dispatch_cached(session_id, closing)
+        self._dispatch_cached(session_id, closing_audio, closing_text)
 
-    def _dispatch_cached(self, session_id: str, audio: bytes) -> None:
+    def _dispatch_cached(
+        self, session_id: str, audio: bytes, spoken_text: str = ""
+    ) -> None:
         """
         Send pre-synthesised audio via the existing tracked-send path.
 
@@ -1193,6 +1323,9 @@ class ProductionPipeline:
         a parent who just explained something hears acknowledgment
         before the agent's prepared reply, rather than feeling that
         their words were ignored.
+
+        Records the assistant turn in conversation_history so the LLM
+        knows what was said on a later fallback.
         """
         send_cb = self._send_callbacks.get(session_id)
         if not send_cb:
@@ -1206,7 +1339,8 @@ class ProductionPipeline:
         # backchannel bytes to the scenario audio bytes.
         last_words = self._last_caller_words.get(session_id, 0)
         cache = self._cached_audio.get(session_id, {})
-        backchannel = cache.get("backchannel")
+        backchannel_entry = cache.get("backchannel")
+        backchannel = backchannel_entry.get("audio") if backchannel_entry else None
         if (
             backchannel
             and last_words >= _BACKCHANNEL_TRIGGER_WORDS
@@ -1218,6 +1352,11 @@ class ProductionPipeline:
                 last_caller_words=last_words,
                 backchannel_bytes=len(backchannel),
             )
+
+        # Record what the agent is about to say so the LLM doesn't
+        # regenerate it on a future off-script turn.
+        if spoken_text:
+            self._record_assistant_in_history(session_id, spoken_text)
 
         task = asyncio.create_task(
             self._send_with_tracking(session_id, audio)
@@ -1288,6 +1427,7 @@ class ProductionPipeline:
         emotion_tone=None,
         situation: SpeechSituation = None,
         session_id: Optional[str] = None,
+        region_tag: Optional[str] = None,
     ) -> bytes:
         """
         Synthesize text with emotion-mapped prosody and situational SSML.
@@ -1300,6 +1440,10 @@ class ProductionPipeline:
         threaded into the TTS layer. A TTSRouter (if installed) uses it
         to pick a Telugu-capable provider (Sarvam Bulbul) for Telugu-pref
         sessions and the default (Deepgram Aura) otherwise.
+
+        Dialect routing (user directive 2026-05-02): region_tag is
+        extracted from the parent record and passed to the TTS layer so
+        pronunciation profiles and audio caches are scoped by region.
         """
         from src.emotion.profile import EmotionalTone
         target = emotion_tone or EmotionalTone.CALM
@@ -1323,6 +1467,17 @@ class ProductionPipeline:
                 except Exception:
                     lang_pref = ""
 
+        # Detect region tag from parent record if not explicitly provided.
+        if region_tag is None and session_id is not None:
+            from src.infrastructure.dialect_router import get_dialect_router
+            router = get_dialect_router()
+            receptionist = self._session_receptionist.get(session_id)
+            if receptionist is not None and hasattr(receptionist, "_parent_records"):
+                record = receptionist._parent_records.get(session_id)
+                region_tag = router.detect_region_from_record(record)
+            if region_tag is None:
+                region_tag = "suryapet"
+
         # Per-call pace from caller-speech-rate adaptation (Communication
         # Accommodation). Only applied for sessions where Sarvam Bulbul
         # is the active provider; the router silently drops the kwarg
@@ -1343,6 +1498,7 @@ class ProductionPipeline:
             ssml=use_ssml,
             lang_pref=lang_pref,
             pace=session_pace,
+            region_tag=region_tag,
         )
 
         wav_buffer = io.BytesIO(pcm_24k)
