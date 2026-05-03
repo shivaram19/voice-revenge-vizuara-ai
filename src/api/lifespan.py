@@ -148,9 +148,33 @@ async def lifespan(app: FastAPI):
         else:
             logger.info("sarvam_tts_not_configured")
 
+        # IndicF5 plug-and-play (user directive 2026-05-02)
+        indicf5_tts = None
+        indicf5_ref = os.getenv("INDICF5_REF_AUDIO", "").strip()
+        indicf5_text = os.getenv("INDICF5_REF_TEXT", "").strip()
+        if indicf5_ref and indicf5_text and os.path.exists(indicf5_ref):
+            try:
+                from src.infrastructure.indicf5_tts_client import IndicF5TTSClient
+                indicf5_tts = IndicF5TTSClient(
+                    ref_audio_path=indicf5_ref,
+                    ref_text=indicf5_text,
+                )
+                logger.info(
+                    "indicf5_tts_configured",
+                    ref_audio=indicf5_ref,
+                    ref_text_preview=indicf5_text[:40],
+                )
+            except Exception as exc:
+                logger.warning("indicf5_tts_init_failed", error=str(exc))
+                indicf5_tts = None
+        else:
+            logger.info("indicf5_tts_not_configured")
+
+        # Build route table. Priority: IndicF5 > Sarvam > Deepgram default.
+        telugu_tts = indicf5_tts or sarvam_tts
         tts = TTSRouter(
             default=deepgram_tts,
-            by_language={"telugu": sarvam_tts} if sarvam_tts else None,
+            by_language={"telugu": telugu_tts} if telugu_tts else None,
         )
         logger.info("tts_router_configured", routes=tts.routes_summary())
 

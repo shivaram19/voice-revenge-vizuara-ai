@@ -50,6 +50,9 @@ from typing import Optional
 
 import requests
 
+from src.infrastructure.tts_audio_cache import get_cache
+from src.infrastructure.dialect_router import get_dialect_router
+
 
 _DEFAULT_ENDPOINT = "https://api.sarvam.ai/text-to-speech"
 _DEFAULT_MODEL = "bulbul:v3"
@@ -138,24 +141,54 @@ class SarvamTTSClient:
         model: Optional[str] = None,  # noqa: ARG002 (interface parity)
         ssml: bool = False,           # noqa: ARG002 (Bulbul v3 ignores)
         pace: Optional[float] = None,  # per-call override (Communication Accommodation)
+        region_tag: Optional[str] = None,
     ) -> bytes:
         """
         Synthesize `text` to a single WAV byte-string.
 
-        If Sarvam returns multiple WAV chunks (multi-segment synthesis),
-        they are concatenated head-to-tail with the WAV header preserved
-        from the first chunk and only the PCM frames appended from the
-        rest. This produces a single playable WAV file that the
-        pipeline's `_synthesize_to_ulaw` can resample as if it had come
-        from a single-shot call.
+        Pipeline:
+        1. Detect region → load pronunciation profile
+        2. Transform text through regional word map (Suryapet slang)
+        3. Check region-scoped disk cache → hit = <5 ms return
+        4. Miss → call Sarvam API → save to region-scoped cache → return
+
+        Region-scoped caching ensures Suryapet pronunciations never leak
+        into Coastal Andhra calls, even for the same text.
         """
+        effective_pace = float(pace) if pace is not None else self.pace
+        region = region_tag or "default"
+
+        # ------------------------------------------------------------------
+        # 1. Apply regional pronunciation profile
+        # ------------------------------------------------------------------
+        router = get_dialect_router()
+        profile = router.get_profile(region)
+        transformed_text = profile.apply(text)
+
+        # ------------------------------------------------------------------
+        # 2. Check region-scoped disk cache
+        # ------------------------------------------------------------------
+        cache = get_cache()
+        cached = cache.get(
+            text=transformed_text,
+            speaker=self.speaker,
+            pace=effective_pace,
+            temperature=self.temperature,
+            lang=self.target_language_code,
+            region_tag=region,
+        )
+        if cached is not None:
+            return cached
+
+        # ------------------------------------------------------------------
+        # 3. Call Sarvam API with transformed text
+        # ------------------------------------------------------------------
         headers = {
             "api-subscription-key": self.api_key,
             "Content-Type": "application/json",
         }
-        effective_pace = float(pace) if pace is not None else self.pace
         body = {
-            "text": text,
+            "text": transformed_text,
             "target_language_code": self.target_language_code,
             "model": _DEFAULT_MODEL,
             "speaker": self.speaker,
@@ -189,9 +222,23 @@ class SarvamTTSClient:
 
         wav_chunks = [base64.b64decode(seg) for seg in audios]
         if len(wav_chunks) == 1:
-            return wav_chunks[0]
+            result = wav_chunks[0]
+        else:
+            result = _concat_wavs(wav_chunks)
 
-        return _concat_wavs(wav_chunks)
+        # ------------------------------------------------------------------
+        # 4. Save to REGION-SCOPED disk cache
+        # ------------------------------------------------------------------
+        cache.put(
+            text=transformed_text,
+            speaker=self.speaker,
+            pace=effective_pace,
+            temperature=self.temperature,
+            lang=self.target_language_code,
+            audio=result,
+            region_tag=region,
+        )
+        return result
 
 
 def _concat_wavs(chunks: list[bytes]) -> bytes:
