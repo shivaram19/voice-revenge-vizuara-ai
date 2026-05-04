@@ -1,15 +1,18 @@
 """
-AI Receptionist Data Models
-SQLite-backed models for appointments, contractors, and call tasks.
-Ref: ADR-005; scheduling theory for conflict-free booking.
+AI Receptionist Data Models — Prisma ORM
+PostgreSQL-backed models for appointments, contractors, and call tasks.
+Maintains the same public interface; methods are now async.
 """
 
-import sqlite3
-from dataclasses import dataclass, asdict
+from __future__ import annotations
+
+from dataclasses import dataclass
 from datetime import datetime, timedelta, date
-from typing import List, Optional, Dict, Any
+from typing import List, Optional
 from enum import Enum
-import json
+
+from src.infrastructure.database import prisma
+
 
 class AppointmentStatus(str, Enum):
     SCHEDULED = "scheduled"
@@ -19,10 +22,12 @@ class AppointmentStatus(str, Enum):
     CANCELLED = "cancelled"
     NO_SHOW = "no_show"
 
+
 class AppointmentType(str, Enum):
     IN_PERSON = "in_person"
     PHONE = "phone"
     VIDEO = "video"
+
 
 class CallTaskStatus(str, Enum):
     PENDING = "pending"
@@ -33,26 +38,22 @@ class CallTaskStatus(str, Enum):
     FAILED = "failed"
     CANCELLED = "cancelled"
 
+
 @dataclass
 class Contractor:
-    """
-    A contractor or staff member who can be scheduled.
-    """
     id: Optional[int]
     name: str
     phone: str
     email: str
     specialty: str
     timezone: str = "UTC"
-    daily_limit: int = 8  # max appointments per day
+    daily_limit: int = 8
     is_active: bool = True
     notes: str = ""
 
+
 @dataclass
 class Appointment:
-    """
-    A scheduled appointment or call.
-    """
     id: Optional[int]
     contractor_id: int
     caller_name: str
@@ -65,23 +66,18 @@ class Appointment:
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
+
 @dataclass
 class TimeSlot:
-    """
-    A single availability window for a contractor.
-    Generated dynamically from contractor templates and existing appointments.
-    """
     contractor_id: int
     date: date
     start_time: datetime
     end_time: datetime
     is_available: bool = True
 
+
 @dataclass
 class CallTask:
-    """
-    An outbound call task to contact a contractor.
-    """
     id: Optional[int]
     contractor_id: int
     purpose: str
@@ -92,279 +88,192 @@ class CallTask:
     created_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
 
-# ---------------------------------------------------------------------------
-# Database Schema
-# ---------------------------------------------------------------------------
-
-SCHEMA_SQL = """
-CREATE TABLE IF NOT EXISTS contractors (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    phone TEXT NOT NULL,
-    email TEXT NOT NULL,
-    specialty TEXT NOT NULL,
-    timezone TEXT DEFAULT 'UTC',
-    daily_limit INTEGER DEFAULT 8,
-    is_active INTEGER DEFAULT 1,
-    notes TEXT DEFAULT ''
-);
-
-CREATE TABLE IF NOT EXISTS appointments (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    contractor_id INTEGER NOT NULL,
-    caller_name TEXT NOT NULL,
-    caller_phone TEXT NOT NULL,
-    start_time TIMESTAMP NOT NULL,
-    duration_minutes INTEGER NOT NULL DEFAULT 30,
-    status TEXT NOT NULL DEFAULT 'scheduled',
-    appointment_type TEXT NOT NULL DEFAULT 'in_person',
-    notes TEXT DEFAULT '',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (contractor_id) REFERENCES contractors(id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_appointments_contractor_date
-    ON appointments(contractor_id, start_time);
-
-CREATE INDEX IF NOT EXISTS idx_appointments_status
-    ON appointments(status);
-
-CREATE TABLE IF NOT EXISTS call_tasks (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    contractor_id INTEGER NOT NULL,
-    purpose TEXT NOT NULL,
-    scheduled_time TIMESTAMP,
-    status TEXT NOT NULL DEFAULT 'pending',
-    twilio_call_sid TEXT,
-    result_notes TEXT DEFAULT '',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    completed_at TIMESTAMP,
-    FOREIGN KEY (contractor_id) REFERENCES contractors(id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_call_tasks_status
-    ON call_tasks(status);
-
-CREATE INDEX IF NOT EXISTS idx_call_tasks_scheduled
-    ON call_tasks(scheduled_time);
-"""
 
 class Database:
-    """
-    SQLite database manager for the receptionist.
-    Production: swap connection string to PostgreSQL.
-    """
-
-    def __init__(self, db_path: str = "receptionist.db"):
-        self.db_path = db_path
-        self._conn = None
-        self._init_schema()
-
-    def _connect(self) -> sqlite3.Connection:
-        # For in-memory DBs, reuse the same connection so tables persist
-        if self.db_path == ":memory:":
-            if self._conn is None:
-                self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
-                self._conn.row_factory = sqlite3.Row
-                self._conn.execute("PRAGMA foreign_keys = ON")
-            return self._conn
-        conn = sqlite3.connect(self.db_path, check_same_thread=False)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA foreign_keys = ON")
-        return conn
-
-    def _init_schema(self) -> None:
-        conn = self._connect()
-        conn.executescript(SCHEMA_SQL)
-        if self.db_path != ":memory:":
-            conn.close()
+    """Prisma-backed receptionist database. All methods are async."""
 
     # -----------------------------------------------------------------------
     # Contractors
     # -----------------------------------------------------------------------
 
-    def add_contractor(self, c: Contractor) -> int:
-        with self._connect() as conn:
-            cursor = conn.execute(
-                """INSERT INTO contractors (name, phone, email, specialty, timezone, daily_limit, is_active, notes)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                (c.name, c.phone, c.email, c.specialty, c.timezone, c.daily_limit, int(c.is_active), c.notes),
-            )
-            conn.commit()
-            return cursor.lastrowid
+    async def add_contractor(self, c: Contractor) -> int:
+        created = await prisma.contractor.create(
+            data={
+                "name": c.name,
+                "phone": c.phone,
+                "email": c.email,
+                "specialty": c.specialty,
+                "timezone": c.timezone,
+                "daily_limit": c.daily_limit,
+                "is_active": c.is_active,
+                "notes": c.notes,
+            }
+        )
+        return created.id
 
-    def get_contractor(self, contractor_id: int) -> Optional[Contractor]:
-        with self._connect() as conn:
-            row = conn.execute(
-                "SELECT * FROM contractors WHERE id = ?", (contractor_id,)
-            ).fetchone()
-            if not row:
-                return None
-            return self._row_to_contractor(row)
+    async def get_contractor(self, contractor_id: int) -> Optional[Contractor]:
+        row = await prisma.contractor.find_unique(where={"id": contractor_id})
+        return self._row_to_contractor(row) if row else None
 
-    def list_contractors(self, active_only: bool = True) -> List[Contractor]:
-        with self._connect() as conn:
-            sql = "SELECT * FROM contractors"
-            params = ()
-            if active_only:
-                sql += " WHERE is_active = 1"
-            rows = conn.execute(sql, params).fetchall()
-            return [self._row_to_contractor(r) for r in rows]
+    async def list_contractors(self, active_only: bool = True) -> List[Contractor]:
+        where = {"is_active": True} if active_only else {}
+        rows = await prisma.contractor.find_many(where=where)
+        return [self._row_to_contractor(r) for r in rows]
 
-    def find_contractors_by_specialty(self, specialty: str) -> List[Contractor]:
-        with self._connect() as conn:
-            rows = conn.execute(
-                "SELECT * FROM contractors WHERE specialty LIKE ? AND is_active = 1",
-                (f"%{specialty}%",),
-            ).fetchall()
-            return [self._row_to_contractor(r) for r in rows]
+    async def find_contractors_by_specialty(self, specialty: str) -> List[Contractor]:
+        rows = await prisma.contractor.find_many(
+            where={
+                "specialty": {"contains": specialty, "mode": "insensitive"},
+                "is_active": True,
+            }
+        )
+        return [self._row_to_contractor(r) for r in rows]
 
-    def _row_to_contractor(self, row: sqlite3.Row) -> Contractor:
+    def _row_to_contractor(self, row) -> Contractor:
         return Contractor(
-            id=row["id"],
-            name=row["name"],
-            phone=row["phone"],
-            email=row["email"],
-            specialty=row["specialty"],
-            timezone=row["timezone"],
-            daily_limit=row["daily_limit"],
-            is_active=bool(row["is_active"]),
-            notes=row["notes"],
+            id=row.id,
+            name=row.name,
+            phone=row.phone,
+            email=row.email,
+            specialty=row.specialty,
+            timezone=row.timezone,
+            daily_limit=row.daily_limit,
+            is_active=row.is_active,
+            notes=row.notes,
         )
 
     # -----------------------------------------------------------------------
     # Appointments
     # -----------------------------------------------------------------------
 
-    def add_appointment(self, a: Appointment) -> int:
-        with self._connect() as conn:
-            cursor = conn.execute(
-                """INSERT INTO appointments
-                   (contractor_id, caller_name, caller_phone, start_time, duration_minutes, status, appointment_type, notes)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                (a.contractor_id, a.caller_name, a.caller_phone,
-                 a.start_time.isoformat(), a.duration_minutes, a.status.value,
-                 a.appointment_type.value, a.notes),
-            )
-            conn.commit()
-            return cursor.lastrowid
+    async def add_appointment(self, a: Appointment) -> int:
+        created = await prisma.appointment.create(
+            data={
+                "contractor_id": a.contractor_id,
+                "caller_name": a.caller_name,
+                "caller_phone": a.caller_phone,
+                "start_time": a.start_time,
+                "duration_minutes": a.duration_minutes,
+                "status": a.status.value,
+                "appointment_type": a.appointment_type.value,
+                "notes": a.notes,
+            }
+        )
+        return created.id
 
-    def get_appointment(self, appointment_id: int) -> Optional[Appointment]:
-        with self._connect() as conn:
-            row = conn.execute(
-                "SELECT * FROM appointments WHERE id = ?", (appointment_id,)
-            ).fetchone()
-            if not row:
-                return None
-            return self._row_to_appointment(row)
+    async def get_appointment(self, appointment_id: int) -> Optional[Appointment]:
+        row = await prisma.appointment.find_unique(where={"id": appointment_id})
+        return self._row_to_appointment(row) if row else None
 
-    def list_appointments_for_contractor(
+    async def list_appointments_for_contractor(
         self,
         contractor_id: int,
         start: datetime,
         end: datetime,
         status_filter: Optional[List[AppointmentStatus]] = None,
     ) -> List[Appointment]:
-        with self._connect() as conn:
-            sql = "SELECT * FROM appointments WHERE contractor_id = ? AND start_time BETWEEN ? AND ?"
-            params = (contractor_id, start.isoformat(), end.isoformat())
-            if status_filter:
-                placeholders = ",".join("?" * len(status_filter))
-                sql += f" AND status IN ({placeholders})"
-                params += tuple(s.value for s in status_filter)
-            rows = conn.execute(sql, params).fetchall()
-            return [self._row_to_appointment(r) for r in rows]
+        where: dict = {
+            "contractor_id": contractor_id,
+            "start_time": {"gte": start, "lte": end},
+        }
+        if status_filter:
+            where["status"] = {"in": [s.value for s in status_filter]}
 
-    def cancel_appointment(self, appointment_id: int) -> bool:
-        with self._connect() as conn:
-            cursor = conn.execute(
-                "UPDATE appointments SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-                (AppointmentStatus.CANCELLED.value, appointment_id),
+        rows = await prisma.appointment.find_many(where=where)
+        return [self._row_to_appointment(r) for r in rows]
+
+    async def cancel_appointment(self, appointment_id: int) -> bool:
+        try:
+            await prisma.appointment.update(
+                where={"id": appointment_id},
+                data={"status": AppointmentStatus.CANCELLED.value},
             )
-            conn.commit()
-            return cursor.rowcount > 0
+            return True
+        except Exception:
+            return False
 
-    def update_appointment_status(self, appointment_id: int, status: AppointmentStatus) -> bool:
-        with self._connect() as conn:
-            cursor = conn.execute(
-                "UPDATE appointments SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-                (status.value, appointment_id),
+    async def update_appointment_status(self, appointment_id: int, status: AppointmentStatus) -> bool:
+        try:
+            await prisma.appointment.update(
+                where={"id": appointment_id},
+                data={"status": status.value},
             )
-            conn.commit()
-            return cursor.rowcount > 0
+            return True
+        except Exception:
+            return False
 
-    def _row_to_appointment(self, row: sqlite3.Row) -> Appointment:
+    def _row_to_appointment(self, row) -> Appointment:
         return Appointment(
-            id=row["id"],
-            contractor_id=row["contractor_id"],
-            caller_name=row["caller_name"],
-            caller_phone=row["caller_phone"],
-            start_time=datetime.fromisoformat(row["start_time"]),
-            duration_minutes=row["duration_minutes"],
-            status=AppointmentStatus(row["status"]),
-            appointment_type=AppointmentType(row["appointment_type"]),
-            notes=row["notes"],
-            created_at=datetime.fromisoformat(row["created_at"]) if row["created_at"] else None,
-            updated_at=datetime.fromisoformat(row["updated_at"]) if row["updated_at"] else None,
+            id=row.id,
+            contractor_id=row.contractor_id,
+            caller_name=row.caller_name,
+            caller_phone=row.caller_phone,
+            start_time=row.start_time,
+            duration_minutes=row.duration_minutes,
+            status=AppointmentStatus(row.status),
+            appointment_type=AppointmentType(row.appointment_type),
+            notes=row.notes,
+            created_at=row.created_at,
+            updated_at=row.updated_at,
         )
 
     # -----------------------------------------------------------------------
     # Call Tasks
     # -----------------------------------------------------------------------
 
-    def add_call_task(self, t: CallTask) -> int:
-        with self._connect() as conn:
-            cursor = conn.execute(
-                """INSERT INTO call_tasks (contractor_id, purpose, scheduled_time, status, twilio_call_sid, result_notes)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
-                (t.contractor_id, t.purpose,
-                 t.scheduled_time.isoformat() if t.scheduled_time else None,
-                 t.status.value, t.twilio_call_sid, t.result_notes),
-            )
-            conn.commit()
-            return cursor.lastrowid
-
-    def get_pending_call_tasks(self, before: Optional[datetime] = None) -> List[CallTask]:
-        with self._connect() as conn:
-            sql = "SELECT * FROM call_tasks WHERE status IN ('pending', 'queued')"
-            params = ()
-            if before:
-                sql += " AND (scheduled_time IS NULL OR scheduled_time <= ?)"
-                params = (before.isoformat(),)
-            rows = conn.execute(sql, params).fetchall()
-            return [self._row_to_call_task(r) for r in rows]
-
-    def update_call_task_status(self, task_id: int, status: CallTaskStatus, notes: str = "", call_sid: Optional[str] = None) -> bool:
-        with self._connect() as conn:
-            fields = ["status = ?", "result_notes = ?"]
-            params = [status.value, notes]
-            if call_sid:
-                fields.append("twilio_call_sid = ?")
-                params.append(call_sid)
-            if status in (CallTaskStatus.COMPLETED, CallTaskStatus.FAILED, CallTaskStatus.CANCELLED):
-                fields.append("completed_at = CURRENT_TIMESTAMP")
-            params.append(task_id)
-            cursor = conn.execute(
-                f"UPDATE call_tasks SET {', '.join(fields)} WHERE id = ?",
-                tuple(params),
-            )
-            conn.commit()
-            return cursor.rowcount > 0
-
-    def _row_to_call_task(self, row: sqlite3.Row) -> CallTask:
-        return CallTask(
-            id=row["id"],
-            contractor_id=row["contractor_id"],
-            purpose=row["purpose"],
-            scheduled_time=datetime.fromisoformat(row["scheduled_time"]) if row["scheduled_time"] else None,
-            status=CallTaskStatus(row["status"]),
-            twilio_call_sid=row["twilio_call_sid"],
-            result_notes=row["result_notes"],
-            created_at=datetime.fromisoformat(row["created_at"]) if row["created_at"] else None,
-            completed_at=datetime.fromisoformat(row["completed_at"]) if row["completed_at"] else None,
+    async def add_call_task(self, t: CallTask) -> int:
+        created = await prisma.calltask.create(
+            data={
+                "contractor_id": t.contractor_id,
+                "purpose": t.purpose,
+                "scheduled_time": t.scheduled_time,
+                "status": t.status.value,
+                "twilio_call_sid": t.twilio_call_sid,
+                "result_notes": t.result_notes,
+            }
         )
+        return created.id
 
-# References
-# [^28]: Newman, S. (2015). Building Microservices. O'Reilly. Event sourcing chapter.
-# [^46]: American Medical Association. (2021). Optimized Scheduling for Primary Care Practices.
+    async def get_pending_call_tasks(self, before: Optional[datetime] = None) -> List[CallTask]:
+        where: dict = {
+            "status": {"in": [CallTaskStatus.PENDING.value, CallTaskStatus.QUEUED.value]},
+        }
+        if before:
+            where["OR"] = [
+                {"scheduled_time": None},
+                {"scheduled_time": {"lte": before}},
+            ]
+
+        rows = await prisma.calltask.find_many(where=where)
+        return [self._row_to_call_task(r) for r in rows]
+
+    async def update_call_task_status(
+        self,
+        task_id: int,
+        status: CallTaskStatus,
+        notes: str = "",
+        call_sid: Optional[str] = None,
+    ) -> bool:
+        data: dict = {"status": status.value, "result_notes": notes}
+        if call_sid:
+            data["twilio_call_sid"] = call_sid
+        if status in (CallTaskStatus.COMPLETED, CallTaskStatus.FAILED, CallTaskStatus.CANCELLED):
+            data["completed_at"] = datetime.utcnow()
+        try:
+            await prisma.calltask.update(where={"id": task_id}, data=data)
+            return True
+        except Exception:
+            return False
+
+    def _row_to_call_task(self, row) -> CallTask:
+        return CallTask(
+            id=row.id,
+            contractor_id=row.contractor_id,
+            purpose=row.purpose,
+            scheduled_time=row.scheduled_time,
+            status=CallTaskStatus(row.status),
+            twilio_call_sid=row.twilio_call_sid,
+            result_notes=row.result_notes,
+            created_at=row.created_at,
+            completed_at=row.completed_at,
+        )

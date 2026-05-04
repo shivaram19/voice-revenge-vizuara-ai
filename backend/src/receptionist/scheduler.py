@@ -36,7 +36,7 @@ class SchedulingEngine:
     def __init__(self, db: Database):
         self.db = db
 
-    def get_available_slots(
+    async def get_available_slots(
         self,
         contractor_id: int,
         target_date: date,
@@ -47,14 +47,14 @@ class SchedulingEngine:
         Return available time slots for a contractor on a given date.
         Accounts for existing appointments, daily limits, and buffer time.
         """
-        contractor = self.db.get_contractor(contractor_id)
+        contractor = await self.db.get_contractor(contractor_id)
         if not contractor or not contractor.is_active:
             return []
 
         # Check daily limit
         day_start = datetime.combine(target_date, time.min)
         day_end = datetime.combine(target_date, time.max)
-        existing = self.db.list_appointments_for_contractor(
+        existing = await self.db.list_appointments_for_contractor(
             contractor_id, day_start, day_end,
             status_filter=[AppointmentStatus.SCHEDULED, AppointmentStatus.CONFIRMED, AppointmentStatus.IN_PROGRESS],
         )
@@ -70,12 +70,12 @@ class SchedulingEngine:
         # Filter out slots that conflict with existing appointments + buffer
         available = []
         for slot in candidates:
-            if self._is_slot_free(contractor_id, slot.start_time, slot.end_time, exclude_appointment_id=None):
+            if await self._is_slot_free(contractor_id, slot.start_time, slot.end_time, exclude_appointment_id=None):
                 available.append(slot)
 
         return available
 
-    def book_appointment(
+    async def book_appointment(
         self,
         contractor_id: int,
         caller_name: str,
@@ -88,7 +88,7 @@ class SchedulingEngine:
         """
         Book an appointment. Returns (success, message, appointment_id).
         """
-        contractor = self.db.get_contractor(contractor_id)
+        contractor = await self.db.get_contractor(contractor_id)
         if not contractor:
             return False, "Contractor not found.", None
         if not contractor.is_active:
@@ -102,13 +102,13 @@ class SchedulingEngine:
 
         # Check slot is free
         end_time = start_time + timedelta(minutes=duration_minutes)
-        if not self._is_slot_free(contractor_id, start_time, end_time, exclude_appointment_id=None):
+        if not await self._is_slot_free(contractor_id, start_time, end_time, exclude_appointment_id=None):
             return False, "That time slot is no longer available.", None
 
         # Check daily limit
         day_start = datetime.combine(start_time.date(), time.min)
         day_end = datetime.combine(start_time.date(), time.max)
-        existing = self.db.list_appointments_for_contractor(
+        existing = await self.db.list_appointments_for_contractor(
             contractor_id, day_start, day_end,
             status_filter=[AppointmentStatus.SCHEDULED, AppointmentStatus.CONFIRMED],
         )
@@ -127,15 +127,15 @@ class SchedulingEngine:
             appointment_type=appointment_type,
             notes=notes,
         )
-        appt_id = self.db.add_appointment(appt)
+        appt_id = await self.db.add_appointment(appt)
 
         time_str = start_time.strftime("%I:%M %p")
         date_str = start_time.strftime("%A, %B %d")
         return True, f"Booked with {contractor.name} for {time_str} on {date_str}.", appt_id
 
-    def cancel_appointment(self, appointment_id: int) -> Tuple[bool, str]:
+    async def cancel_appointment(self, appointment_id: int) -> Tuple[bool, str]:
         """Cancel an appointment."""
-        appt = self.db.get_appointment(appointment_id)
+        appt = await self.db.get_appointment(appointment_id)
         if not appt:
             return False, "Appointment not found."
         if appt.status == AppointmentStatus.CANCELLED:
@@ -143,10 +143,10 @@ class SchedulingEngine:
         if appt.status == AppointmentStatus.COMPLETED:
             return False, "Cannot cancel a completed appointment."
 
-        self.db.cancel_appointment(appointment_id)
+        await self.db.cancel_appointment(appointment_id)
         return True, "Appointment cancelled."
 
-    def reschedule_appointment(
+    async def reschedule_appointment(
         self,
         appointment_id: int,
         new_start_time: datetime,
@@ -156,7 +156,7 @@ class SchedulingEngine:
         Reschedule an appointment to a new time.
         Implementation: cancel old, book new (preserves audit trail).
         """
-        old_appt = self.db.get_appointment(appointment_id)
+        old_appt = await self.db.get_appointment(appointment_id)
         if not old_appt:
             return False, "Appointment not found.", None
         if old_appt.status == AppointmentStatus.CANCELLED:
@@ -165,11 +165,11 @@ class SchedulingEngine:
             return False, "Cannot reschedule a completed appointment.", None
 
         # Cancel old
-        self.db.cancel_appointment(appointment_id)
+        await self.db.cancel_appointment(appointment_id)
 
         # Book new
         duration = new_duration_minutes or old_appt.duration_minutes
-        success, message, new_id = self.book_appointment(
+        success, message, new_id = await self.book_appointment(
             contractor_id=old_appt.contractor_id,
             caller_name=old_appt.caller_name,
             caller_phone=old_appt.caller_phone,
@@ -181,12 +181,12 @@ class SchedulingEngine:
 
         if not success:
             # Attempt to restore old appointment
-            self.db.update_appointment_status(appointment_id, old_appt.status)
+            await self.db.update_appointment_status(appointment_id, old_appt.status)
             return False, f"Reschedule failed: {message}. Original appointment restored.", None
 
         return True, message, new_id
 
-    def get_contractor_schedule(
+    async def get_contractor_schedule(
         self,
         contractor_id: int,
         start_date: date,
@@ -195,7 +195,7 @@ class SchedulingEngine:
         """Get a contractor's schedule for a date range."""
         start = datetime.combine(start_date, time.min)
         end = datetime.combine(end_date, time.max)
-        return self.db.list_appointments_for_contractor(
+        return await self.db.list_appointments_for_contractor(
             contractor_id, start, end,
             status_filter=[AppointmentStatus.SCHEDULED, AppointmentStatus.CONFIRMED, AppointmentStatus.IN_PROGRESS],
         )
@@ -225,7 +225,7 @@ class SchedulingEngine:
 
         return slots
 
-    def _is_slot_free(
+    async def _is_slot_free(
         self,
         contractor_id: int,
         start: datetime,
@@ -240,7 +240,7 @@ class SchedulingEngine:
         day_start = datetime.combine(start.date(), time.min)
         day_end = datetime.combine(start.date(), time.max)
 
-        existing = self.db.list_appointments_for_contractor(
+        existing = await self.db.list_appointments_for_contractor(
             contractor_id, day_start, day_end,
             status_filter=[AppointmentStatus.SCHEDULED, AppointmentStatus.CONFIRMED, AppointmentStatus.IN_PROGRESS],
         )
