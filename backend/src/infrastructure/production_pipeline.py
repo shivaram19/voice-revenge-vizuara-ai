@@ -218,7 +218,7 @@ class ProductionPipeline:
             domain = self.domain_router.resolve(phone_number=called)
             resolved_id = domain.domain_id if domain is not None else self.default_domain
 
-        receptionist = self._get_or_create_receptionist(resolved_id)
+        receptionist = await self._get_or_create_receptionist(resolved_id)
         self._session_receptionist[session_id] = receptionist
         self._send_callbacks[session_id] = send_callback
         self._final_buffers[session_id] = ""
@@ -821,7 +821,7 @@ class ProductionPipeline:
     # Receptionist factory
     # ------------------------------------------------------------------
 
-    def _get_or_create_receptionist(self, domain_id: str) -> Receptionist:
+    async def _get_or_create_receptionist(self, domain_id: str) -> Receptionist:
         if domain_id in self._receptionists:
             return self._receptionists[domain_id]
 
@@ -830,7 +830,7 @@ class ProductionPipeline:
             raise ValueError(f"Unknown domain: {domain_id}")
 
         llm = self.llm_factory()
-        receptionist = domain.create_receptionist(llm_client=llm, tts_provider=None)
+        receptionist = await domain.create_receptionist(llm_client=llm, tts_provider=None)
         self._receptionists[domain_id] = receptionist
         return receptionist
 

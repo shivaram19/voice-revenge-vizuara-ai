@@ -180,7 +180,7 @@ class DomainPort(ABC):
         pass
 
     @abstractmethod
-    def create_receptionist(
+    async def create_receptionist(
         self,
         llm_client: LLMPort,
         tts_provider: Optional[Any] = None,
