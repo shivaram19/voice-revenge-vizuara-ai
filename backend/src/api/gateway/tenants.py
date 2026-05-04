@@ -14,7 +14,7 @@ _db = GatewayDB()
 
 @router.post("", response_model=TenantOut)
 async def create_tenant(body: TenantCreate):
-    existing = _db.get_tenant_by_id(body.tenant_id)
+    existing = await _db.get_tenant_by_id(body.tenant_id)
     if existing:
         raise HTTPException(status_code=409, detail="Tenant already exists")
 
@@ -26,9 +26,9 @@ async def create_tenant(body: TenantCreate):
         admin_email=body.admin_email,
         student_count_range=body.student_count_range,
     )
-    tid = _db.create_tenant(tenant)
+    tid = await _db.create_tenant(tenant)
     # Fetch back to get created_at
-    created = _db.get_tenant_by_id(body.tenant_id)
+    created = await _db.get_tenant_by_id(body.tenant_id)
     if created is None:
         raise HTTPException(status_code=500, detail="Failed to create tenant")
     return _to_out(created)
@@ -36,7 +36,7 @@ async def create_tenant(body: TenantCreate):
 
 @router.get("/me", response_model=TenantOut)
 async def get_my_tenant(tenant_id: str = "lincoln-high"):
-    tenant = _db.get_tenant_by_id(tenant_id)
+    tenant = await _db.get_tenant_by_id(tenant_id)
     if tenant is None:
         raise HTTPException(status_code=404, detail="Tenant not found")
     return _to_out(tenant)
