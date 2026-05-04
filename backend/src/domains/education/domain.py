@@ -55,7 +55,7 @@ class EducationDomain(DomainPort):
             fallback_after_misunderstandings=3,
         )
 
-    def create_receptionist(
+    async def create_receptionist(
         self,
         llm_client: LLMPort,
         tts_provider: Optional[Any] = None,
