@@ -8,54 +8,60 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from fastapi import APIRouter
 
-from src.api.gateway.db import GatewayDB
+from src.infrastructure.database import prisma
 from src.api.gateway.models import DashboardResponse, DashboardKPIs, DashboardTrend, SystemStatusResponse
 from src.infrastructure.call_state import CallStateManager
 
 router = APIRouter(prefix="/gateway/v1", tags=["gateway-analytics"])
-_db = GatewayDB()
 _state = CallStateManager()
 DEFAULT_TENANT = "lincoln-high"
 
 
 @router.get("/analytics/dashboard", response_model=DashboardResponse)
 async def dashboard(tenant_id: str = DEFAULT_TENANT):
-    # Aggregate from call_logs
-    with _db._connect() as conn:
-        total = conn.execute(
-            "SELECT COUNT(*) as c FROM call_logs WHERE tenant_id = ? AND created_at >= date('now')",
-            (tenant_id,),
-        ).fetchone()["c"]
+    # Aggregate from call_logs via Prisma
+    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
 
-        successful = conn.execute(
-            "SELECT COUNT(*) as c FROM call_logs WHERE tenant_id = ? AND status = 'completed' AND created_at >= date('now')",
-            (tenant_id,),
-        ).fetchone()["c"]
+    total = await prisma.calllog.count(
+        where={
+            "tenant_id": tenant_id,
+            "created_at": {"gte": today_start},
+        }
+    )
 
-        failed = conn.execute(
-            "SELECT COUNT(*) as c FROM call_logs WHERE tenant_id = ? AND status IN ('failed', 'voicemail') AND created_at >= date('now')",
-            (tenant_id,),
-        ).fetchone()["c"]
+    successful = await prisma.calllog.count(
+        where={
+            "tenant_id": tenant_id,
+            "status": "completed",
+            "created_at": {"gte": today_start},
+        }
+    )
 
-        # Recent calls (last 10)
-        recent_rows = conn.execute(
-            """SELECT call_sid, call_type, status, created_at, duration_seconds
-               FROM call_logs WHERE tenant_id = ?
-               ORDER BY created_at DESC LIMIT 10""",
-            (tenant_id,),
-        ).fetchall()
+    failed = await prisma.calllog.count(
+        where={
+            "tenant_id": tenant_id,
+            "status": {"in": ["failed", "voicemail"]},
+            "created_at": {"gte": today_start},
+        }
+    )
+
+    recent_rows = await prisma.calllog.find_many(
+        where={"tenant_id": tenant_id},
+        order={"created_at": "desc"},
+        take=10,
+    )
 
     recent_calls = []
     for r in recent_rows:
-        when = datetime.fromisoformat(r["created_at"]) if r["created_at"] else datetime.utcnow()
+        when = r.created_at or datetime.utcnow()
         ago = _human_ago(when)
-        mins = r["duration_seconds"] // 60
-        secs = r["duration_seconds"] % 60
+        mins = (r.duration_seconds or 0) // 60
+        secs = (r.duration_seconds or 0) % 60
         recent_calls.append({
-            "id": r["call_sid"],
+            "id": r.call_sid,
             "student": "Unknown",  # join with students table in v2
-            "type": r["call_type"] or "General",
-            "status": r["status"] or "unknown",
+            "type": r.call_type or "General",
+            "status": r.status or "unknown",
             "time": ago,
             "duration": f"{mins}m {secs}s",
         })
