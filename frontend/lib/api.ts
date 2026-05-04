@@ -78,6 +78,37 @@ export async function login(email: string, password: string): Promise<{ session:
   return res.data || null;
 }
 
+export async function register(
+  email: string,
+  password: string,
+  full_name: string,
+  role: string,
+  school_name: string,
+  district?: string,
+  student_count_range?: string
+): Promise<{ session: GatewaySession; user: GatewayUser } | null> {
+  const res = await fetchJson<{
+    data?: { session: GatewaySession; user: GatewayUser };
+    error?: { message: string };
+  }>("/gateway/v1/auth/register", {
+    method: "POST",
+    body: JSON.stringify({
+      email,
+      password,
+      full_name,
+      role,
+      school_name,
+      district,
+      student_count_range,
+    }),
+  });
+  if (res.error) return null;
+  if (res.data?.session) {
+    localStorage.setItem("mock_auth_session", JSON.stringify(res.data.session));
+  }
+  return res.data || null;
+}
+
 export async function logout(): Promise<void> {
   const token = getToken();
   if (token) {
