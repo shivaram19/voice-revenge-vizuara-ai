@@ -41,7 +41,7 @@ class OutboundCaller:
         except ImportError:
             raise RuntimeError("twilio package not installed. Run: pip install twilio")
 
-    def create_task(
+    async def create_task(
         self,
         contractor_id: int,
         purpose: str,
@@ -58,17 +58,17 @@ class OutboundCaller:
             scheduled_time=scheduled_time,
             status=CallTaskStatus.PENDING,
         )
-        return self.db.add_call_task(task)
+        return await self.db.add_call_task(task)
 
-    def get_due_tasks(self) -> List[CallTask]:
+    async def get_due_tasks(self) -> List[CallTask]:
         """
         Get all call tasks that are ready to be executed.
         Tasks with no scheduled_time are due immediately.
         """
         now = datetime.utcnow()
-        return self.db.get_pending_call_tasks(before=now)
+        return await self.db.get_pending_call_tasks(before=now)
 
-    def initiate_call(self, task: CallTask, from_number: str, callback_url: str) -> Optional[str]:
+    async def initiate_call(self, task: CallTask, from_number: str, callback_url: str) -> Optional[str]:
         """
         Initiate a Twilio outbound call for a task.
         Returns the Twilio Call SID, or None if failed.
@@ -81,9 +81,9 @@ class OutboundCaller:
         if not self._twilio_client:
             raise RuntimeError("Twilio client not configured. Call configure_twilio() first.")
 
-        contractor = self.db.get_contractor(task.contractor_id)
+        contractor = await self.db.get_contractor(task.contractor_id)
         if not contractor:
-            self.db.update_call_task_status(task.id, CallTaskStatus.FAILED, "Contractor not found")
+            await self.db.update_call_task_status(task.id, CallTaskStatus.FAILED, "Contractor not found")
             return None
 
         try:
@@ -97,7 +97,7 @@ class OutboundCaller:
                 machine_detection_timeout=10,
             )
 
-            self.db.update_call_task_status(
+            await self.db.update_call_task_status(
                 task.id,
                 CallTaskStatus.DIALING,
                 call_sid=call.sid,
@@ -105,14 +105,14 @@ class OutboundCaller:
             return call.sid
 
         except Exception as e:
-            self.db.update_call_task_status(
+            await self.db.update_call_task_status(
                 task.id,
                 CallTaskStatus.FAILED,
                 notes=str(e),
             )
             return None
 
-    def handle_status_callback(self, task_id: int, call_sid: str, call_status: str, call_duration: int = 0) -> None:
+    async def handle_status_callback(self, task_id: int, call_sid: str, call_status: str, call_duration: int = 0) -> None:
         """
         Handle Twilio status callback for an outbound call.
         Updates task status based on call outcome.
@@ -133,11 +133,11 @@ class OutboundCaller:
         if call_duration > 0:
             notes += f", Duration: {call_duration}s"
 
-        self.db.update_call_task_status(task_id, new_status, notes=notes, call_sid=call_sid)
+        await self.db.update_call_task_status(task_id, new_status, notes=notes, call_sid=call_sid)
 
-    def format_task_summary(self, task: CallTask) -> str:
+    async def format_task_summary(self, task: CallTask) -> str:
         """Format a call task for voice notification to receptionist."""
-        contractor = self.db.get_contractor(task.contractor_id)
+        contractor = await self.db.get_contractor(task.contractor_id)
         name = contractor.name if contractor else "Unknown contractor"
 
         if task.status == CallTaskStatus.COMPLETED:

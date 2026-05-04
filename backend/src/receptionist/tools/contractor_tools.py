@@ -30,10 +30,10 @@ class ContractorDirectory:
         self.db = db
         self.scheduler = SchedulingEngine(db)
 
-    def find_contractors(self, query: str) -> List[Contractor]:
+    async def find_contractors(self, query: str) -> List[Contractor]:
         """Search contractors by name, specialty, or phone."""
         query_lower = query.lower()
-        all_contractors = self.db.list_contractors(active_only=True)
+        all_contractors = await self.db.list_contractors(active_only=True)
         scored = []
 
         for c in all_contractors:
@@ -48,21 +48,21 @@ class ContractorDirectory:
         scored.sort(key=lambda x: x[0], reverse=True)
         return [c for _, c in scored[:3]]
 
-    def check_availability(
+    async def check_availability(
         self,
         contractor_id: int,
         target_date: date,
         duration_minutes: int = 30,
     ) -> List[datetime]:
         """Return available start times for a contractor on a date."""
-        slots = self.scheduler.get_available_slots(
+        slots = await self.scheduler.get_available_slots(
             contractor_id=contractor_id,
             target_date=target_date,
             duration_minutes=duration_minutes,
         )
         return [s.start_time for s in slots]
 
-    def book_appointment(
+    async def book_appointment(
         self,
         contractor_id: int,
         caller_name: str,
@@ -73,7 +73,7 @@ class ContractorDirectory:
         notes: str = "",
     ) -> BookingResult:
         """Book an appointment with a contractor."""
-        success, message, appt_id = self.scheduler.book_appointment(
+        success, message, appt_id = await self.scheduler.book_appointment(
             contractor_id=contractor_id,
             caller_name=caller_name,
             caller_phone=caller_phone,
@@ -84,21 +84,21 @@ class ContractorDirectory:
         )
         return BookingResult(success=success, message=message, appointment_id=appt_id)
 
-    def cancel_appointment(self, appointment_id: int) -> Tuple[bool, str]:
+    async def cancel_appointment(self, appointment_id: int) -> Tuple[bool, str]:
         """Cancel an existing appointment."""
-        return self.scheduler.cancel_appointment(appointment_id)
+        return await self.scheduler.cancel_appointment(appointment_id)
 
-    def reschedule_appointment(
+    async def reschedule_appointment(
         self,
         appointment_id: int,
         new_start_time: datetime,
     ) -> Tuple[bool, str, Optional[int]]:
         """Reschedule an appointment."""
-        return self.scheduler.reschedule_appointment(appointment_id, new_start_time)
+        return await self.scheduler.reschedule_appointment(appointment_id, new_start_time)
 
-    def get_schedule(self, contractor_id: int, start_date: date, end_date: date) -> List[Appointment]:
+    async def get_schedule(self, contractor_id: int, start_date: date, end_date: date) -> List[Appointment]:
         """Get a contractor's schedule."""
-        return self.scheduler.get_contractor_schedule(contractor_id, start_date, end_date)
+        return await self.scheduler.get_contractor_schedule(contractor_id, start_date, end_date)
 
     def format_for_voice(self, contractors: List[Contractor]) -> str:
         """Format contractor list for spoken response."""
@@ -112,9 +112,9 @@ class ContractorDirectory:
             lines.append(f"{c.name}, {c.specialty}.")
         return " ".join(lines)
 
-    def format_appointment_for_voice(self, appt: Appointment) -> str:
+    async def format_appointment_for_voice(self, appt: Appointment) -> str:
         """Format appointment confirmation for spoken response."""
-        contractor = self.db.get_contractor(appt.contractor_id)
+        contractor = await self.db.get_contractor(appt.contractor_id)
         name = contractor.name if contractor else "your contractor"
         time_str = appt.start_time.strftime("%I:%M %p")
         date_str = appt.start_time.strftime("%A, %B %d")
@@ -141,7 +141,7 @@ class OutboundCallManager:
         self.db = db
         self.caller = OutboundCaller(db)
 
-    def schedule_call_to_contractor(
+    async def schedule_call_to_contractor(
         self,
         contractor_id: int,
         purpose: str,
@@ -151,11 +151,11 @@ class OutboundCallManager:
         Schedule an outbound call to a contractor.
         Returns (success, message, task_id).
         """
-        contractor = self.db.get_contractor(contractor_id)
+        contractor = await self.db.get_contractor(contractor_id)
         if not contractor:
             return False, "Contractor not found.", -1
 
-        task_id = self.caller.create_task(
+        task_id = await self.caller.create_task(
             contractor_id=contractor_id,
             purpose=purpose,
             scheduled_time=scheduled_time,
@@ -168,9 +168,9 @@ class OutboundCallManager:
         else:
             return True, f"I'll call {contractor.name} right now about: {purpose}.", task_id
 
-    def get_pending_calls(self) -> List[CallTask]:
+    async def get_pending_calls(self) -> List[CallTask]:
         """Get all pending outbound call tasks."""
-        return self.caller.get_due_tasks()
+        return await self.caller.get_due_tasks()
 
     def format_call_status_for_voice(self, task_id: int) -> str:
         """Format call task status for spoken response."""
