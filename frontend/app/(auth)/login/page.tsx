@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { signInWithPassword } from "@/lib/mock-auth";
+import { signInWithPassword } from "@/lib/auth";
 import { Eye, EyeOff, Zap, ShieldCheck } from "lucide-react";
 
 export default function LoginPage() {

@@ -2,12 +2,17 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { register } from "@/lib/api";
 
 export default function OnboardingPage() {
   const router = useRouter();
   const [step, setStep] = useState(1);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState("");
   const [formData, setFormData] = useState({
     name: "",
+    email: "",
+    password: "",
     role: "Principal",
     schoolName: "",
     district: "",
@@ -19,13 +24,27 @@ export default function OnboardingPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Here we would create the tenant in Supabase:
-    // await supabase.from('tenants').insert({ school_name: formData.schoolName, ... })
-    
-    // Simulate API call
-    setTimeout(() => {
-      router.push("/dashboard");
-    }, 1000);
+    setError("");
+    setIsLoading(true);
+
+    const result = await register(
+      formData.email,
+      formData.password,
+      formData.name,
+      formData.role,
+      formData.schoolName,
+      formData.district || undefined,
+      formData.studentCount || undefined
+    );
+
+    setIsLoading(false);
+
+    if (!result) {
+      setError("Failed to create account. The email or school may already exist.");
+      return;
+    }
+
+    router.push("/dashboard");
   };
 
   return (
@@ -35,20 +54,26 @@ export default function OnboardingPage() {
         <div className="absolute top-0 left-0 w-full h-1.5 bg-slate-800">
           <div 
             className="h-full bg-indigo-500 transition-all duration-500 ease-out"
-            style={{ width: `${(step / 2) * 100}%` }}
+            style={{ width: `${(step / 3) * 100}%` }}
           />
         </div>
 
         <div className="mb-10">
           <h1 className="text-3xl font-bold text-white mb-2">
-            {step === 1 ? "Let's personalize your experience" : "Tell us about your school"}
+            {step === 1 ? "Let's personalize your experience" : step === 2 ? "Create your account" : "Tell us about your school"}
           </h1>
           <p className="text-slate-400">
-            {step === 1 ? "We'll set up the system specifically for your role." : "This will create your school's dedicated workspace."}
+            {step === 1 ? "We'll set up the system specifically for your role." : step === 2 ? "Your login credentials for the command center." : "This will create your school's dedicated workspace."}
           </p>
         </div>
 
-        <form onSubmit={step === 2 ? handleSubmit : (e) => { e.preventDefault(); handleNext(); }}>
+        {error && (
+          <div className="mb-6 p-3 bg-red-500/10 border border-red-500/20 text-red-400 rounded-lg text-sm">
+            {error}
+          </div>
+        )}
+
+        <form onSubmit={step === 3 ? handleSubmit : (e) => { e.preventDefault(); handleNext(); }}>
           {step === 1 && (
             <div className="space-y-6 animate-in slide-in-from-right-4 duration-300">
               <div className="space-y-2">
@@ -79,6 +104,34 @@ export default function OnboardingPage() {
           )}
 
           {step === 2 && (
+            <div className="space-y-6 animate-in slide-in-from-right-4 duration-300">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-300">Email Address</label>
+                <input 
+                  type="email" 
+                  value={formData.email}
+                  onChange={(e) => setFormData({...formData, email: e.target.value})}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                  placeholder="you@school.edu"
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-300">Password</label>
+                <input 
+                  type="password" 
+                  value={formData.password}
+                  onChange={(e) => setFormData({...formData, password: e.target.value})}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                  placeholder="••••••••"
+                  required
+                  minLength={6}
+                />
+              </div>
+            </div>
+          )}
+
+          {step === 3 && (
             <div className="space-y-6 animate-in slide-in-from-right-4 duration-300">
               <div className="space-y-2">
                 <label className="text-sm font-medium text-slate-300">School Name</label>
@@ -134,9 +187,20 @@ export default function OnboardingPage() {
             
             <button 
               type="submit" 
-              className="px-8 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-medium rounded-lg shadow-lg shadow-indigo-500/20 transition-all"
+              disabled={isLoading}
+              className="px-8 py-3 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white font-medium rounded-lg shadow-lg shadow-indigo-500/20 transition-all"
             >
-              {step === 2 ? "Complete Setup" : "Continue"}
+              {isLoading ? (
+                <span className="flex items-center gap-2">
+                  <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4z" />
+                  </svg>
+                  Setting up...
+                </span>
+              ) : (
+                step === 3 ? "Complete Setup" : "Continue"
+              )}
             </button>
           </div>
         </form>
