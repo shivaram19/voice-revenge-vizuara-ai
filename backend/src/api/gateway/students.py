@@ -45,7 +45,7 @@ async def list_students(
     grade: Optional[str] = Query(None),
     tenant_id: str = DEFAULT_TENANT,
 ):
-    items, total = _db.list_students(tenant_id, page, page_size, search, grade)
+    items, total = await _db.list_students(tenant_id, page, page_size, search, grade)
     return StudentListResponse(
         items=[_to_out(s) for s in items],
         total=total,
@@ -66,8 +66,8 @@ async def create_student(body: StudentCreate, tenant_id: str = DEFAULT_TENANT):
         attendance_status=body.attendance_status,
         recent_call_summary="None",
     )
-    sid = _db.create_student(student)
-    created = _db.get_student(sid)
+    sid = await _db.create_student(student)
+    created = await _db.get_student(sid)
     if created is None:
         raise HTTPException(status_code=500, detail="Failed to create student")
     return _to_out(created)
@@ -75,7 +75,7 @@ async def create_student(body: StudentCreate, tenant_id: str = DEFAULT_TENANT):
 
 @router.get("/{student_id}", response_model=StudentOut)
 async def get_student(student_id: int):
-    student = _db.get_student(student_id)
+    student = await _db.get_student(student_id)
     if student is None:
         raise HTTPException(status_code=404, detail="Student not found")
     return _to_out(student)
@@ -83,7 +83,7 @@ async def get_student(student_id: int):
 
 @router.patch("/{student_id}", response_model=StudentOut)
 async def update_student(student_id: int, body: StudentUpdate):
-    student = _db.get_student(student_id)
+    student = await _db.get_student(student_id)
     if student is None:
         raise HTTPException(status_code=404, detail="Student not found")
 
@@ -91,20 +91,20 @@ async def update_student(student_id: int, body: StudentUpdate):
     if not updates:
         return _to_out(student)
 
-    ok = _db.update_student(student_id, updates)
+    ok = await _db.update_student(student_id, updates)
     if not ok:
         raise HTTPException(status_code=500, detail="Update failed")
 
-    updated = _db.get_student(student_id)
+    updated = await _db.get_student(student_id)
     return _to_out(updated)
 
 
 @router.delete("/{student_id}")
 async def delete_student(student_id: int):
-    student = _db.get_student(student_id)
+    student = await _db.get_student(student_id)
     if student is None:
         raise HTTPException(status_code=404, detail="Student not found")
-    _db.delete_student(student_id)
+    await _db.delete_student(student_id)
     return {"status": "deleted", "id": student_id}
 
 
@@ -114,7 +114,7 @@ async def trigger_student_call(student_id: int, tenant_id: str = DEFAULT_TENANT)
     Trigger an outbound call to the student's parent.
     Delegates to the existing voice /call endpoint logic.
     """
-    student = _db.get_student(student_id)
+    student = await _db.get_student(student_id)
     if student is None:
         raise HTTPException(status_code=404, detail="Student not found")
 
