@@ -1,0 +1,169 @@
+// Prisma Schema — Voice Agent Platform
+// Merges Gateway CRM + Receptionist voice pipeline into PostgreSQL (Neon)
+
+generator client {
+  provider  = "prisma-client-py"
+  interface = "asyncio"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// Gateway CRM (Education domain — frontend-facing)
+// ============================================================================
+
+model Tenant {
+  id                Int      @id @default(autoincrement())
+  tenant_id         String   @unique
+  name              String
+  district          String?
+  admin_email       String?
+  student_count_range String?
+  created_at        DateTime @default(now())
+
+  users    User[]
+  students Student[]
+  call_logs CallLog[]
+
+  @@index([tenant_id])
+  @@map("tenants")
+}
+
+model User {
+  id          Int      @id @default(autoincrement())
+  email       String   @unique
+  password    String?
+  full_name   String
+  role        String
+  tenant_id   String?
+  avatar_seed String?
+  created_at  DateTime @default(now())
+
+  tenant Tenant? @relation(fields: [tenant_id], references: [tenant_id])
+
+  @@index([tenant_id])
+  @@map("users")
+}
+
+model Student {
+  id                Int      @id @default(autoincrement())
+  tenant_id         String
+  name              String
+  grade             String?
+  parent_name       String?
+  parent_phone      String?
+  attendance_status String?
+  recent_call_summary String?
+  created_at        DateTime @default(now())
+  updated_at        DateTime @updatedAt
+
+  tenant    Tenant    @relation(fields: [tenant_id], references: [tenant_id])
+  call_logs CallLog[]
+
+  @@index([tenant_id])
+  @@index([grade])
+  @@index([name])
+  @@map("students")
+}
+
+model CallLog {
+  id                Int       @id @default(autoincrement())
+  call_sid          String    @unique
+  tenant_id         String?
+  student_id        Int?
+  domain            String?
+  direction         String?
+  phone_to          String?
+  phone_from        String?
+  status            String?
+  call_type         String?
+  duration_seconds  Int?
+  transcript_summary String?
+  created_at        DateTime  @default(now())
+  ended_at          DateTime?
+
+  tenant      Tenant?      @relation(fields: [tenant_id], references: [tenant_id])
+  student     Student?     @relation(fields: [student_id], references: [id])
+  transcripts Transcript[]
+
+  @@index([tenant_id])
+  @@index([status])
+  @@index([created_at])
+  @@map("call_logs")
+}
+
+model Transcript {
+  id           Int      @id @default(autoincrement())
+  call_sid     String
+  speaker      String
+  text         String
+  timestamp_ms Int
+  created_at   DateTime @default(now())
+
+  call_log CallLog @relation(fields: [call_sid], references: [call_sid])
+
+  @@index([call_sid])
+  @@map("transcripts")
+}
+
+// ============================================================================
+// Receptionist / Voice Pipeline (Construction domain)
+// ============================================================================
+
+model Contractor {
+  id          Int      @id @default(autoincrement())
+  name        String
+  phone       String?
+  email       String?
+  specialty   String?
+  timezone    String?
+  daily_limit Int?     @default(5)
+  is_active   Boolean  @default(true)
+  notes       String?
+
+  appointments Appointment[]
+  call_tasks   CallTask[]
+
+  @@map("contractors")
+}
+
+model Appointment {
+  id                Int      @id @default(autoincrement())
+  contractor_id     Int
+  caller_name       String?
+  caller_phone      String?
+  start_time        DateTime
+  duration_minutes  Int?
+  status            String?
+  appointment_type  String?
+  notes             String?
+  created_at        DateTime @default(now())
+  updated_at        DateTime @updatedAt
+
+  contractor Contractor @relation(fields: [contractor_id], references: [id])
+
+  @@index([contractor_id])
+  @@index([start_time])
+  @@map("appointments")
+}
+
+model CallTask {
+  id              Int       @id @default(autoincrement())
+  contractor_id   Int
+  purpose         String?
+  scheduled_time  DateTime?
+  status          String?
+  twilio_call_sid String?
+  result_notes    String?
+  created_at      DateTime  @default(now())
+  completed_at    DateTime?
+
+  contractor Contractor @relation(fields: [contractor_id], references: [id])
+
+  @@index([contractor_id])
+  @@index([status])
+  @@map("call_tasks")
+}
