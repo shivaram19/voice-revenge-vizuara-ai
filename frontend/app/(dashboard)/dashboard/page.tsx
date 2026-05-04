@@ -1,21 +1,47 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { Activity, PhoneOutgoing, CheckCircle2, AlertCircle, Clock } from "lucide-react";
+import { fetchDashboard, fetchSystemStatus, type DashboardResponse, type SystemStatus } from "@/lib/api";
 
 export default function DashboardOverviewPage() {
-  const stats = [
-    { title: "Total Calls Today", value: "142", icon: PhoneOutgoing, trend: "+12%", trendUp: true },
-    { title: "Successful Contacts", value: "128", icon: CheckCircle2, trend: "+8%", trendUp: true },
-    { title: "Failed / Voicemail", value: "14", icon: AlertCircle, trend: "-2%", trendUp: false },
-    { title: "Active AI Agents", value: "3", icon: Activity, trend: "Optimal", trendUp: true },
-  ];
+  const [dashboard, setDashboard] = useState<DashboardResponse | null>(null);
+  const [systemStatus, setSystemStatus] = useState<SystemStatus | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  const recentCalls = [
-    { id: 1, student: "Emma Thompson", type: "Absence Follow-up", status: "completed", time: "2m ago", duration: "1m 24s" },
-    { id: 2, student: "James Wilson", type: "Fee Reminder", status: "failed", time: "15m ago", duration: "0m 45s" },
-    { id: 3, student: "Sophia Martinez", type: "Event Announcement", status: "completed", time: "1h ago", duration: "2m 10s" },
-    { id: 4, student: "Liam Garcia", type: "Absence Follow-up", status: "completed", time: "2h ago", duration: "1m 55s" },
-  ];
+  useEffect(() => {
+    async function load() {
+      try {
+        const [dash, status] = await Promise.all([
+          fetchDashboard(),
+          fetchSystemStatus(),
+        ]);
+        setDashboard(dash);
+        setSystemStatus(status);
+      } catch (e) {
+        console.error("Failed to load dashboard", e);
+      } finally {
+        setLoading(false);
+      }
+    }
+    load();
+  }, []);
+
+  const stats = dashboard?.kpis
+    ? [
+        { title: "Total Calls Today", value: String(dashboard.kpis.total_calls), icon: PhoneOutgoing, trend: "+12%", trendUp: true },
+        { title: "Successful Contacts", value: String(dashboard.kpis.successful_contacts), icon: CheckCircle2, trend: "+8%", trendUp: true },
+        { title: "Failed / Voicemail", value: String(dashboard.kpis.failed_voicemail), icon: AlertCircle, trend: "-2%", trendUp: false },
+        { title: "Active AI Agents", value: String(dashboard.kpis.active_agents), icon: Activity, trend: "Optimal", trendUp: true },
+      ]
+    : [
+        { title: "Total Calls Today", value: "—", icon: PhoneOutgoing, trend: "...", trendUp: true },
+        { title: "Successful Contacts", value: "—", icon: CheckCircle2, trend: "...", trendUp: true },
+        { title: "Failed / Voicemail", value: "—", icon: AlertCircle, trend: "...", trendUp: false },
+        { title: "Active AI Agents", value: "—", icon: Activity, trend: "...", trendUp: true },
+      ];
+
+  const recentCalls = dashboard?.recent_calls || [];
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
@@ -59,7 +85,18 @@ export default function DashboardOverviewPage() {
           </div>
           <div className="flex-1 p-5">
             <div className="space-y-4">
-              {recentCalls.map((call) => (
+              {loading && (
+                <div className="flex items-center justify-center py-12 text-slate-500">
+                  <div className="animate-spin w-5 h-5 border-2 border-indigo-500 border-t-transparent rounded-full mr-2" />
+                  Loading calls...
+                </div>
+              )}
+              {!loading && recentCalls.length === 0 && (
+                <div className="flex items-center justify-center py-12 text-slate-500">
+                  No recent calls found.
+                </div>
+              )}
+              {recentCalls.map((call: any) => (
                 <div key={call.id} className="flex items-center justify-between p-4 rounded-lg bg-slate-950/50 border border-slate-800/50 hover:bg-slate-800/50 transition-colors group">
                   <div className="flex items-center gap-4">
                     <div className={`w-2 h-2 rounded-full ${call.status === 'completed' ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]'}`} />
@@ -106,20 +143,20 @@ export default function DashboardOverviewPage() {
                 <span className="text-sm text-slate-400">Telephony Gateway</span>
                 <span className="text-xs font-medium px-2 py-1 bg-emerald-500/10 text-emerald-400 rounded-full flex items-center gap-1.5">
                   <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse"></span>
-                  Operational
+                  {systemStatus?.gateway_status || "Operational"}
                 </span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-sm text-slate-400">AI Latency</span>
-                <span className="text-sm text-slate-200 font-medium">850ms</span>
+                <span className="text-sm text-slate-200 font-medium">{systemStatus ? `${systemStatus.ai_latency_ms}ms` : "—"}</span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-sm text-slate-400">Daily Quota</span>
                 <div className="w-1/2 flex items-center gap-3">
                   <div className="h-1.5 w-full bg-slate-800 rounded-full overflow-hidden">
-                    <div className="h-full bg-indigo-500 w-[14%]"></div>
+                    <div className="h-full bg-indigo-500" style={{ width: `${systemStatus?.daily_quota_percent || 0}%` }}></div>
                   </div>
-                  <span className="text-xs text-slate-500">14%</span>
+                  <span className="text-xs text-slate-500">{systemStatus?.daily_quota_percent || 0}%</span>
                 </div>
               </div>
             </div>

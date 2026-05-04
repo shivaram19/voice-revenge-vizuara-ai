@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { LayoutDashboard, Users, PhoneCall, Settings, Bell, Search, LogOut } from "lucide-react";
-import { getSession, signOut, type MockSession } from "@/lib/mock-auth";
+import { getSession, signOut, type MockSession } from "@/lib/auth";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
