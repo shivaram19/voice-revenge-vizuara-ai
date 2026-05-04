@@ -54,7 +54,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.telephony.twilio_gateway import TwilioGateway
 from src.telephony._audio_compat import ratecv, lin2ulaw
-from src.receptionist.models import Database
+from src.receptionist.models import Database, Contractor
 from src.receptionist.scheduler import SchedulingEngine
 from src.receptionist.service import ReceptionistConfig, CallSession
 from src.receptionist.construction_service import ConstructionReceptionist
@@ -154,20 +154,20 @@ class MockLLMClient(LLMPort):
         "Absolutely. I can help you book a visit, find the perfect contractor, or answer any questions. What do you need?",
     ]
 
-    def __init__(self, db: Database):
+    def __init__(self, db: Database, all_contractors: Optional[List[Contractor]] = None):
         self.db = db
+        self._all_contractors = all_contractors or []
         # Track recently used fallback indices to enforce exclusion window.
         # Per Vrajitoru (2006) and Treumuth (2008), excluding the last 3 used
         # templates prevents circular repetition and maintains credibility [^62].
         self._recent_fallback_indices: list = []
 
     def _find_contractor_id(self, query: str) -> Optional[int]:
-        all_contractors = self.db.list_contractors(active_only=True)
         query_lower = query.lower()
-        for c in all_contractors:
+        for c in self._all_contractors:
             if query_lower in c.specialty.lower() or query_lower in c.name.lower():
                 return c.id
-        return all_contractors[0].id if all_contractors else None
+        return self._all_contractors[0].id if self._all_contractors else None
 
     def chat_completion(self, messages: List[Dict[str, str]], tools: List[Dict[str, Any]]) -> Dict[str, Any]:
         user_msg = ""
@@ -257,7 +257,7 @@ class FindContractorTool(Tool):
     def parameters(self) -> Dict[str, Any]: return {"properties": {"query": {"type": "string"}}, "required": ["query"]}
     async def execute(self, **kwargs) -> ToolResult:
         query = kwargs.get("query", "")
-        all_contractors = self.db.list_contractors(active_only=True)
+        all_contractors = await self.db.list_contractors(active_only=True)
         query_lower = query.lower()
         results = [c for c in all_contractors if query_lower in c.specialty.lower() or query_lower in c.name.lower() or query_lower in c.phone]
         if not results: return ToolResult(success=False, message=f"No contractors found for '{query}'.")
@@ -278,7 +278,7 @@ class CheckAvailabilityTool(Tool):
             cid = int(kwargs["contractor_id"])
             target = datetime.strptime(kwargs["date"], "%Y-%m-%d").date()
         except Exception as e: return ToolResult(success=False, message="Invalid parameters.", error=str(e))
-        slots = self.scheduler.get_available_slots(cid, target)
+        slots = await self.scheduler.get_available_slots(cid, target)
         if not slots: return ToolResult(success=False, message="No available slots.")
         times = [s.start_time.strftime("%I:%M %p") for s in slots[:5]]
         return ToolResult(success=True, message=f"Available times: {', '.join(times)}.", data={"slots": times})
@@ -300,7 +300,7 @@ class BookAppointmentTool(Tool):
             target_time = datetime.strptime(kwargs["time"], "%H:%M").time()
             start = datetime.combine(target_date, target_time)
             duration = int(kwargs.get("duration_minutes", 30))
-            success, msg, appt_id = self.scheduler.book_appointment(cid, kwargs["caller_name"], kwargs["caller_phone"], start, duration, appointment_type=AppointmentType.IN_PERSON, notes=kwargs.get("notes", ""))
+            success, msg, appt_id = await self.scheduler.book_appointment(cid, kwargs["caller_name"], kwargs["caller_phone"], start, duration, appointment_type=AppointmentType.IN_PERSON, notes=kwargs.get("notes", ""))
         except Exception as e: return ToolResult(success=False, message="Invalid booking.", error=str(e))
         return ToolResult(success=success, message=msg, data={"appointment_id": appt_id})
 
@@ -331,7 +331,7 @@ class OutboundCallTool(Tool):
     async def execute(self, **kwargs) -> ToolResult:
         cid = int(kwargs.get("contractor_id", 0))
         reason = kwargs.get("reason", "")
-        c = self.db.get_contractor(cid)
+        c = await self.db.get_contractor(cid)
         if not c: return ToolResult(success=False, message="Contractor not found.")
         return ToolResult(success=True, message=f"I've scheduled a call to {c.name} at {c.phone} regarding: {reason}.")
 
@@ -357,9 +357,14 @@ class DemoPipeline:
         self.gateway = gateway or TwilioGateway()
         self.stt = stt or DemoSTT(model_size="tiny")
         self.tts = tts or self._load_tts()
-        self.receptionist = receptionist or self._build_receptionist()
+        self.receptionist = receptionist
         self._buffers: Dict[str, AudioBuffer] = {}
         self._processing: set = set()
+
+    async def initialize(self):
+        """Async initialization — builds the receptionist if not injected."""
+        if self.receptionist is None:
+            self.receptionist = await self._build_receptionist()
 
     def _load_tts(self) -> DemoTTS:
         model_dir = PROJECT_ROOT / "models" / "piper"
@@ -369,9 +374,10 @@ class DemoPipeline:
             raise RuntimeError(f"Piper model not found at {model}. Run: python scripts/setup-demo-models.py")
         return DemoTTS(str(model), str(config))
 
-    def _build_receptionist(self) -> ConstructionReceptionist:
+    async def _build_receptionist(self) -> ConstructionReceptionist:
         db = Database(":memory:")
-        seed_database(db)
+        await seed_database(db)
+        all_contractors = await db.list_contractors(active_only=True)
         faq_kb = FAQKnowledgeBase()
         for item in CONSTRUCTION_FAQ:
             faq_kb.add(FAQChunk(text=item["text"], source="company_handbook", category=item["category"]))
@@ -388,9 +394,7 @@ class DemoPipeline:
             hours_text="Monday through Friday, 8 AM to 6 PM. Emergency dispatch 24/7.",
             tool_timeout_seconds=5.0,
         )
-        llm = MockLLMClient(db)
-        # No monkey-patching: MockLLMClient.chat_completion is now sync,
-        # so BaseReceptionist._llm_chat_completion (run_in_executor) works correctly.
+        llm = MockLLMClient(db, all_contractors=all_contractors)
         return ConstructionReceptionist(
             config=config,
             tool_registry=registry,

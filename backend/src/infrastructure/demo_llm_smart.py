@@ -36,8 +36,8 @@ class SmartMockLLM:
             }
         return self.sessions[session_id]
 
-    def _find_contractor_id(self, query: str) -> Optional[int]:
-        all_contractors = self.db.list_contractors(active_only=True)
+    async def _find_contractor_id(self, query: str) -> Optional[int]:
+        all_contractors = await self.db.list_contractors(active_only=True)
         query_lower = query.lower()
         for c in all_contractors:
             if query_lower in c.specialty.lower() or query_lower in c.name.lower():
@@ -119,7 +119,7 @@ class SmartMockLLM:
         # ===== BOOKING / SCHEDULING =====
         if self._fuzzy_match(user_msg, ["book", "schedule", "appointment", "slot", "available", "when", "time", "tomorrow", "today", "next week", "monday", "tuesday", "wednesday", "thursday", "friday"]):
             sess["last_intent"] = "check_availability"
-            cid = self._find_contractor_id(user_msg)
+            cid = await self._find_contractor_id(user_msg)
             tomorrow = (datetime.utcnow() + timedelta(days=1)).strftime("%Y-%m-%d")
             if "book" in user_lower or "appointment" in user_lower:
                 return {
@@ -142,7 +142,7 @@ class SmartMockLLM:
         # ===== OUTBOUND CALL =====
         if self._fuzzy_match(user_msg, ["call back", "callback", "have them call", "schedule a call", "reach me", "contact me"]):
             sess["last_intent"] = "schedule_outbound_call"
-            cid = self._find_contractor_id(user_msg)
+            cid = await self._find_contractor_id(user_msg)
             return {
                 "content": None,
                 "tool_calls": [{"id": "call_out", "function": {"name": "schedule_outbound_call", "arguments": json.dumps({"contractor_id": cid, "reason": user_msg})}}]
