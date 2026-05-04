@@ -43,6 +43,21 @@ class LoginResponse(BaseModel):
     error: Optional[Dict[str, str]] = None
 
 
+class RegisterRequest(BaseModel):
+    email: str
+    password: str
+    full_name: str
+    role: str = "Principal"
+    school_name: str
+    district: Optional[str] = None
+    student_count_range: Optional[str] = None
+
+
+class RegisterResponse(BaseModel):
+    data: Optional[Dict[str, Any]] = None
+    error: Optional[Dict[str, str]] = None
+
+
 # ---------------------------------------------------------------------------
 # Tenant
 # ---------------------------------------------------------------------------
