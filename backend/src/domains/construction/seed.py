@@ -10,7 +10,7 @@ from src.receptionist.models import Database, Contractor, AppointmentType
 from src.receptionist.scheduler import SchedulingEngine
 
 
-def seed_database(db: Database) -> None:
+async def seed_database(db: Database) -> None:
     """
     Seed the database with construction contractors and sample data.
     Call this on first startup.
@@ -40,7 +40,7 @@ def seed_database(db: Database) -> None:
 
     contractor_ids = {}
     for c in contractors:
-        cid = db.add_contractor(c)
+        cid = await db.add_contractor(c)
         contractor_ids[c.specialty] = cid
         print(f"  Added contractor: {c.name} ({c.specialty})")
 
@@ -49,7 +49,7 @@ def seed_database(db: Database) -> None:
     today = date.today()
 
     # Mike Ross has a site walkthrough at 10 AM
-    scheduler.book_appointment(
+    await scheduler.book_appointment(
         contractor_ids["General Contracting"],
         "Homeowner", "5559991",
         datetime.combine(today, time(10, 0)),
@@ -59,7 +59,7 @@ def seed_database(db: Database) -> None:
     )
 
     # Sarah Chen has an electrical inspection at 2 PM
-    scheduler.book_appointment(
+    await scheduler.book_appointment(
         contractor_ids["Electrical"],
         "Builder Corp", "5559992",
         datetime.combine(today, time(14, 0)),
@@ -69,7 +69,7 @@ def seed_database(db: Database) -> None:
     )
 
     # James O'Brien has a plumbing emergency call at 9 AM
-    scheduler.book_appointment(
+    await scheduler.book_appointment(
         contractor_ids["Plumbing"],
         "Property Mgmt", "5559993",
         datetime.combine(today, time(9, 0)),
@@ -118,5 +118,6 @@ CONSTRUCTION_FAQ = [
 
 
 if __name__ == "__main__":
+    import asyncio
     db = Database("construction_receptionist.db")
-    seed_database(db)
+    asyncio.run(seed_database(db))

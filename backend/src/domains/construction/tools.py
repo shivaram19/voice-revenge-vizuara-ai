@@ -33,7 +33,7 @@ class FindContractorTool(Tool):
 
     async def execute(self, **kwargs) -> ToolResult:
         query = kwargs.get("query", "")
-        all_contractors = self.db.list_contractors(active_only=True)
+        all_contractors = await self.db.list_contractors(active_only=True)
         query_lower = query.lower()
         results = [
             c
@@ -88,7 +88,7 @@ class CheckAvailabilityTool(Tool):
             target = datetime.strptime(kwargs["date"], "%Y-%m-%d").date()
         except Exception as e:
             return ToolResult(success=False, message="Invalid parameters.", error=str(e))
-        slots = self.scheduler.get_available_slots(cid, target)
+        slots = await self.scheduler.get_available_slots(cid, target)
         if not slots:
             return ToolResult(success=False, message="No available slots.")
         times = [s.start_time.strftime("%I:%M %p") for s in slots[:5]]
@@ -136,7 +136,7 @@ class BookAppointmentTool(Tool):
             target_time = datetime.strptime(kwargs["time"], "%H:%M").time()
             start = datetime.combine(target_date, target_time)
             duration = int(kwargs.get("duration_minutes", 30))
-            success, msg, appt_id = self.scheduler.book_appointment(
+            success, msg, appt_id = await self.scheduler.book_appointment(
                 cid,
                 kwargs["caller_name"],
                 kwargs["caller_phone"],
@@ -203,7 +203,7 @@ class OutboundCallTool(Tool):
     async def execute(self, **kwargs) -> ToolResult:
         cid = int(kwargs.get("contractor_id", 0))
         reason = kwargs.get("reason", "")
-        c = self.db.get_contractor(cid)
+        c = await self.db.get_contractor(cid)
         if not c:
             return ToolResult(success=False, message="Contractor not found.")
         return ToolResult(

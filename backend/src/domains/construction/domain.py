@@ -39,7 +39,7 @@ class ConstructionDomain(DomainPort):
     def domain_id(self) -> str:
         return "construction"
 
-    def create_receptionist(
+    async def create_receptionist(
         self,
         llm_client: LLMPort,
         tts_provider: Optional[Any] = None,
@@ -50,7 +50,7 @@ class ConstructionDomain(DomainPort):
         """
         # 1. Database & seed data
         db = Database(":memory:")
-        seed_database(db)
+        await seed_database(db)
 
         # 2. FAQ knowledge base
         faq_kb = FAQKnowledgeBase()
