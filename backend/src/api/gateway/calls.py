@@ -51,7 +51,7 @@ async def list_calls(
     status: Optional[str] = Query(None),
     tenant_id: str = DEFAULT_TENANT,
 ):
-    items, total = _db.list_call_logs(tenant_id, page, page_size, status)
+    items, total = await _db.list_call_logs(tenant_id, page, page_size, status)
     return CallListResponse(
         items=[_call_to_out(c) for c in items],
         total=total,
@@ -79,7 +79,7 @@ async def list_active_calls():
 
 @router.get("/{call_sid}/transcript", response_model=List[TranscriptLineOut])
 async def get_transcript(call_sid: str):
-    rows = _db.get_transcripts_for_call(call_sid)
+    rows = await _db.get_transcripts_for_call(call_sid)
     return [
         TranscriptLineOut(speaker=r.speaker, text=r.text, timestamp_ms=r.timestamp_ms)
         for r in rows
@@ -94,9 +94,9 @@ async def terminate_call(call_sid: str):
 
     await _state.finalize_call(call_sid, status="terminated")
     # Persist final state
-    existing = _db.get_call_log_by_sid(call_sid)
+    existing = await _db.get_call_log_by_sid(call_sid)
     if existing:
-        _db.update_call_log(call_sid, {
+        await _db.update_call_log(call_sid, {
             "status": "terminated",
             "duration_seconds": call.duration_seconds,
             "ended_at": call.ended_at.isoformat() if call.ended_at else None,
