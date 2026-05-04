@@ -19,6 +19,7 @@ from src.domains.registry import DomainRegistry
 from src.domains.router import DomainRouter
 from src.infrastructure.logging_config import configure_logging, get_logger
 from src.infrastructure.telemetry import init_telemetry
+from src.infrastructure.database import prisma
 
 
 def _discover_domains() -> List[DomainPort]:
@@ -96,6 +97,7 @@ async def lifespan(app: FastAPI):
     if demo_mode:
         from src.infrastructure.demo_pipeline import DemoPipeline
         app.state.demo_pipeline = DemoPipeline()
+        await app.state.demo_pipeline.initialize()
         logger.info("demo_mode_active")
     else:
         from src.infrastructure.production_pipeline import ProductionPipeline
@@ -151,11 +153,15 @@ async def lifespan(app: FastAPI):
         )
         logger.info("prod_mode_active")
 
+    # Connect Prisma ORM
+    await prisma.connect()
+    logger.info("prisma_connected")
+
     # Seed gateway database with demo data for frontend
     try:
         from src.api.gateway.db import GatewayDB
         gw_db = GatewayDB()
-        gw_db.seed_demo_data()
+        await gw_db.seed_demo_data()
         logger.info("gateway_db_seeded")
     except Exception as seed_err:
         logger.warning("gateway_db_seed_failed", error=str(seed_err))
@@ -172,4 +178,6 @@ async def lifespan(app: FastAPI):
     yield
 
     # Shutdown
+    await prisma.disconnect()
+    logger.info("prisma_disconnected")
     logger.info("voice_agent_shutting_down")

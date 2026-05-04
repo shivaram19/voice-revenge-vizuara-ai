@@ -160,7 +160,7 @@ async def handle_twilio_websocket(websocket: WebSocket, call_sid: str):
                     # Persist call log
                     try:
                         gw_db = GatewayDB()
-                        gw_db.create_call_log(CallLog(
+                        await gw_db.create_call_log(CallLog(
                             id=None,
                             call_sid=actual_call_sid,
                             tenant_id="lincoln-high",
@@ -224,7 +224,7 @@ async def handle_twilio_websocket(websocket: WebSocket, call_sid: str):
                         finalized = await call_state.finalize_call(session_id, status="completed")
                         if finalized:
                             gw_db = GatewayDB()
-                            gw_db.update_call_log(session_id, {
+                            await gw_db.update_call_log(session_id, {
                                 "status": "completed",
                                 "duration_seconds": finalized.duration_seconds,
                                 "ended_at": finalized.ended_at.isoformat() if finalized.ended_at else None,
