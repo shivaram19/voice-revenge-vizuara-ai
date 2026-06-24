@@ -63,6 +63,7 @@ models/
 
 # Call recordings (runtime data, may contain PII)
 recordings/
+.env.prod-backup
 
 # Next.js
 .next/
@@ -70,3 +71,7 @@ out/
 .vercel/
 
 node_modules/
+
+# Healthcare MVP runtime data
+healthcare_follow_ups.jsonl
+logs/
