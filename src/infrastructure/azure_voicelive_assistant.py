@@ -1,17 +1,26 @@
 """
 Azure VoiceLive (GPT-4.1 real-time) Healthcare Assistant
 ==========================================================
-Thin adapter around the Microsoft Foundry VoiceLive SDK that runs the
+Adapter around the Microsoft Foundry VoiceLive SDK that runs the
 healthcare patient follow-up agent with native real-time audio.
+
+Aligns with the official VoiceLive samples:
+  https://github.com/microsoft-foundry/voicelive-samples
+
+Supports:
+  - Real-time audio capture/playback via pyaudio
+  - Azure Standard voices and OpenAI voices
+  - Function calling with async tool execution
+  - Input audio transcription for transcript logging
+  - Proactive greeting and barge-in handling
 
 Goal-Engineering alignment:
   - Objective: capture well-being, medicine adherence, side effects, and
     escalation needs during a post-visit phone call.
   - Constraint: no diagnosis or medical advice; escalate emergencies;
     concise Telugu/English turns.
-  - Toolset: this first integration uses instructions only. Native function
-    calling via the VoiceLive SDK will be added in a follow-up spike once
-    the conversation design is validated.
+  - Toolset: patient lookup, symptom/adherence/side-effect recording,
+    callback scheduling, escalation, and summary persistence.
 
 Prerequisites:
   - azure-ai-voicelive SDK installed (preview package from Microsoft Foundry).
@@ -25,8 +34,11 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import inspect
+import json
 import logging
 import queue
+from collections.abc import Callable, Mapping
 from typing import Any, cast
 
 from azure.core.credentials import AzureKeyCredential
@@ -40,14 +52,19 @@ try:
     from azure.ai.voicelive.aio import connect
     from azure.ai.voicelive.models import (
         AudioEchoCancellation,
+        AudioInputTranscriptionOptions,
         AudioNoiseReduction,
         AzureStandardVoice,
+        FunctionCallOutputItem,
+        FunctionTool,
         InputAudioFormat,
+        ItemType,
         Modality,
         OutputAudioFormat,
         RequestSession,
         ServerEventType,
         ServerVad,
+        ToolChoiceLiteral,
     )
 
     VOICELIVE_AVAILABLE = True
@@ -55,14 +72,19 @@ except Exception as _exc:  # pragma: no cover - SDK may not be installed
     VOICELIVE_AVAILABLE = False
     connect = None
     AudioEchoCancellation = None
+    AudioInputTranscriptionOptions = None
     AudioNoiseReduction = None
     AzureStandardVoice = None
+    FunctionCallOutputItem = None
+    FunctionTool = None
     InputAudioFormat = None
+    ItemType = None
     Modality = None
     OutputAudioFormat = None
     RequestSession = None
     ServerEventType = None
     ServerVad = None
+    ToolChoiceLiteral = None
 
 try:
     import pyaudio
@@ -236,7 +258,7 @@ class HealthcareVoiceLiveAssistant:
     Healthcare-specific wrapper around the Azure VoiceLive real-time API.
 
     Injects the goal-engineered follow-up instructions and manages the
-    audio/event lifecycle.
+    audio/event lifecycle, including optional function calling.
     """
 
     def __init__(
@@ -246,6 +268,8 @@ class HealthcareVoiceLiveAssistant:
         model: str,
         voice: str,
         instructions: str,
+        tools: dict[str, Callable[..., Any]] | None = None,
+        proactive_greeting: bool = True,
     ) -> None:
         if not VOICELIVE_AVAILABLE:
             raise RuntimeError(
@@ -257,11 +281,15 @@ class HealthcareVoiceLiveAssistant:
         self.model = model
         self.voice = voice
         self.instructions = instructions
+        self.tools = tools or {}
+        self.proactive_greeting = proactive_greeting
         self.connection: Any | None = None
         self.audio_processor: VoiceLiveAudioProcessor | None = None
         self.session_ready = False
+        self._conversation_started = False
         self._active_response = False
         self._response_api_done = False
+        self._pending_function_call: dict[str, Any] | None = None
 
     async def start(self) -> None:
         """Start the real-time voice assistant session."""
@@ -282,7 +310,7 @@ class HealthcareVoiceLiveAssistant:
                 self.audio_processor.shutdown()
 
     async def _setup_session(self) -> None:
-        """Configure the VoiceLive session with healthcare instructions."""
+        """Configure the VoiceLive session with healthcare instructions and tools."""
         logger.info("Setting up VoiceLive session...")
 
         if self.voice.startswith("en-US-") or self.voice.startswith("en-CA-") or "-" in self.voice:
@@ -296,21 +324,38 @@ class HealthcareVoiceLiveAssistant:
             silence_duration_ms=500,
         )
 
-        session_config = RequestSession(
-            modalities=[Modality.TEXT, Modality.AUDIO],
-            instructions=self.instructions,
-            voice=voice_config,
-            input_audio_format=InputAudioFormat.PCM16,
-            output_audio_format=OutputAudioFormat.PCM16,
-            turn_detection=turn_detection,
-            input_audio_echo_cancellation=AudioEchoCancellation(),
-            input_audio_noise_reduction=AudioNoiseReduction(type="azure_deep_noise_suppression"),
-        )
+        # Build function tool schemas from registered tools.
+        function_tools: list[Any] = []
+        for name, fn in self.tools.items():
+            function_tools.append(
+                FunctionTool(
+                    name=name,
+                    description=fn.__doc__ or f"Execute {name}",
+                    parameters=getattr(fn, "parameters", {"type": "object", "properties": {}}),
+                )
+            )
+
+        session_kwargs: dict[str, Any] = {
+            "modalities": [Modality.TEXT, Modality.AUDIO],
+            "instructions": self.instructions,
+            "voice": voice_config,
+            "input_audio_format": InputAudioFormat.PCM16,
+            "output_audio_format": OutputAudioFormat.PCM16,
+            "turn_detection": turn_detection,
+            "input_audio_echo_cancellation": AudioEchoCancellation(),
+            "input_audio_noise_reduction": AudioNoiseReduction(type="azure_deep_noise_suppression"),
+            "input_audio_transcription": AudioInputTranscriptionOptions(model="whisper-1"),
+        }
+        if function_tools:
+            session_kwargs["tools"] = function_tools
+            session_kwargs["tool_choice"] = ToolChoiceLiteral.AUTO
+
+        session_config = RequestSession(**session_kwargs)
 
         conn = self.connection
         assert conn is not None
         await conn.session.update(session=session_config)
-        logger.info("Session configuration sent")
+        logger.info("Session configuration sent (tools=%s)", len(function_tools))
 
     async def _process_events(self) -> None:
         """Process events from the VoiceLive connection."""
@@ -333,11 +378,22 @@ class HealthcareVoiceLiveAssistant:
         if event.type == ServerEventType.SESSION_UPDATED:
             logger.info("Session ready: %s", event.session.id)
             self.session_ready = True
+
+            # Start audio capture once session is ready.
             ap.start_capture()
             print("\n" + "=" * 60)
             print("🏥 Healthcare Follow-Up Agent Ready")
             print("Start speaking. Press Ctrl+C to exit.")
             print("=" * 60 + "\n")
+
+            # Proactive greeting: ask the model to speak first.
+            if self.proactive_greeting and not self._conversation_started:
+                self._conversation_started = True
+                try:
+                    await conn.response.create()
+                    logger.info("Sent proactive greeting request")
+                except Exception:
+                    logger.exception("Failed to send proactive greeting")
 
         elif event.type == ServerEventType.INPUT_AUDIO_BUFFER_SPEECH_STARTED:
             logger.info("User started speaking")
@@ -375,6 +431,37 @@ class HealthcareVoiceLiveAssistant:
             self._active_response = False
             self._response_api_done = True
 
+            # Execute pending function call if arguments are ready.
+            if self._pending_function_call and "arguments" in self._pending_function_call:
+                await self._execute_function_call(self._pending_function_call)
+                self._pending_function_call = None
+
+        elif event.type == ServerEventType.CONVERSATION_ITEM_CREATED:
+            logger.debug("Conversation item created: %s", event.item.id)
+
+            # Detect function call request from the model.
+            if getattr(event.item, "type", None) == ItemType.FUNCTION_CALL:
+                function_call_item = event.item
+                self._pending_function_call = {
+                    "name": function_call_item.name,
+                    "call_id": function_call_item.call_id,
+                    "previous_item_id": function_call_item.id,
+                }
+                print(f"🔧 Calling function: {function_call_item.name}")
+                logger.info(
+                    "Function call detected: %s with call_id: %s",
+                    function_call_item.name,
+                    function_call_item.call_id,
+                )
+
+        elif event.type == ServerEventType.RESPONSE_FUNCTION_CALL_ARGUMENTS_DONE:
+            if (
+                self._pending_function_call
+                and getattr(event, "call_id", None) == self._pending_function_call.get("call_id")
+            ):
+                logger.info("Function arguments received: %s", event.arguments)
+                self._pending_function_call["arguments"] = event.arguments
+
         elif event.type == ServerEventType.ERROR:
             msg = event.error.message
             if "Cancellation failed: no active response" in msg:
@@ -383,11 +470,53 @@ class HealthcareVoiceLiveAssistant:
                 logger.error("VoiceLive error: %s", msg)
                 print(f"Error: {msg}")
 
-        elif event.type == ServerEventType.CONVERSATION_ITEM_CREATED:
-            logger.debug("Conversation item created: %s", event.item.id)
-
         else:
             logger.debug("Unhandled event type: %s", event.type)
+
+    async def _execute_function_call(self, function_call_info: dict[str, Any]) -> None:
+        """Execute a registered tool and send the result back to the conversation."""
+        conn = self.connection
+        assert conn is not None
+
+        function_name = function_call_info["name"]
+        call_id = function_call_info["call_id"]
+        previous_item_id = function_call_info["previous_item_id"]
+        arguments = function_call_info["arguments"]
+
+        try:
+            fn = self.tools.get(function_name)
+            if fn is None:
+                logger.error("Unknown function: %s", function_name)
+                return
+
+            logger.info("Executing function: %s", function_name)
+
+            # Parse arguments if they came as a JSON string.
+            if isinstance(arguments, str):
+                args = json.loads(arguments) if arguments.strip() else {}
+            else:
+                args = dict(arguments) if isinstance(arguments, Mapping) else {}
+
+            # Support both sync and async tool implementations.
+            if inspect.iscoroutinefunction(fn):
+                result = await fn(**args)
+            else:
+                result = fn(**args)
+
+            output = {"result": result}
+            function_output = FunctionCallOutputItem(call_id=call_id, output=json.dumps(output))
+            await conn.conversation.item.create(
+                previous_item_id=previous_item_id, item=function_output
+            )
+            logger.info("Function result sent: %s", output)
+            print(f"✅ Function {function_name} completed")
+
+            # Request a new response so the model can speak the result.
+            await conn.response.create()
+            logger.info("Requested new response with function result")
+
+        except Exception as e:
+            logger.error("Error executing function %s: %s", function_name, e)
 
 
 def check_audio_devices() -> bool:
