@@ -1,0 +1,119 @@
+# syntax=docker/dockerfile:1
+"""
+WebRTC ASR Service Dockerfile
+==============================
+GPU-backed container for Moonshine v2 Medium Streaming real-time ASR over
+WebRTC. Serves a browser demo at /static/webrtc-demo.html.
+
+Base image: NVIDIA CUDA runtime with Python 3.11.
+Model: Moonshine v2 Medium Streaming English (~270 MB quantized ONNX).
+Capacity: ~100 concurrent streams per L4 GPU (CPU inference is also viable).
+
+Ref: ADR-023; ADR-024.
+"""
+
+FROM nvidia/cuda:12.1.1-runtime-ubuntu22.04 AS builder
+
+WORKDIR /build
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.11 \
+    python3.11-dev \
+    python3-pip \
+    build-essential \
+    libffi-dev \
+    libsndfile1 \
+    ffmpeg \
+    && rm -rf /var/lib/apt/lists/* \
+    && update-alternatives --install /usr/bin/python python /usr/bin/python3.11 1 \
+    && update-alternatives --install /usr/bin/pip pip /usr/bin/pip3 1
+
+# Upgrade pip and install the minimal dependency set for the WebRTC ASR path.
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir \
+        fastapi>=0.111.0 \
+        uvicorn[standard]>=0.29.0 \
+        python-dotenv>=1.0.0 \
+        numpy>=1.26.0 \
+        scipy>=1.12.0 \
+        librosa>=0.10.0 \
+        soundfile>=0.12.0 \
+        aiortc>=1.9.0 \
+        av>=14.0.0,<17.0.0 \
+        prometheus-client>=0.20.0 \
+        structlog>=24.1.0 \
+        pydantic>=2.7.0
+
+# moonshine-voice must be installed separately because it pins some transitive
+# dependencies that conflict with a blanket install.
+RUN pip install --no-cache-dir moonshine-voice>=0.0.60
+
+# Copy source so the pre-download step can import the engine wrapper.
+COPY src/ ./src/
+ENV PYTHONPATH=/build
+
+# Pre-download the English medium-streaming model so the container starts cold.
+RUN python - <<'PY'
+import asyncio
+import os
+os.environ["MOONSHINE_VOICE_LOG_LEVEL"] = "ERROR"
+from src.asr.moonshine_engine import MoonshineStreamingEngine
+asyncio.run(MoonshineStreamingEngine.create(language="en", update_interval_ms=500))
+PY
+
+# ---------------------------------------------------------------------------
+# Production stage
+# ---------------------------------------------------------------------------
+FROM nvidia/cuda:12.1.1-runtime-ubuntu22.04 AS production
+
+WORKDIR /app
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV CUDA_VISIBLE_DEVICES=0
+
+RUN apt-get update && apt-get install -y --no-recommends \
+    python3.11 \
+    python3-pip \
+    libgomp1 \
+    libsndfile1 \
+    ffmpeg \
+    && rm -rf /var/lib/apt/lists/* \
+    && update-alternatives --install /usr/bin/python python /usr/bin/python3.11 1 \
+    && update-alternatives --install /usr/bin/pip pip /usr/bin/pip3 1
+
+COPY --from=builder /usr/local/lib/python3.11/dist-packages /usr/local/lib/python3.11/dist-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
+COPY --from=builder /root/.cache/moonshine_voice /root/.cache/moonshine_voice
+
+COPY src/ ./src/
+COPY pyproject.toml ./
+COPY docker/entrypoint.webrtc.sh /app/entrypoint.sh
+
+# Cache directory used by moonshine-voice and writable recordings dir.
+RUN groupadd -r voiceagent && useradd -r -g voiceagent voiceagent \
+    && mkdir -p /home/voiceagent/.cache/moonshine_voice \
+    && cp -r /root/.cache/moonshine_voice/* /home/voiceagent/.cache/moonshine_voice/ \
+    && mkdir -p /app/recordings \
+    && chown -R voiceagent:voiceagent /app /home/voiceagent
+
+USER voiceagent
+
+EXPOSE 8000
+
+ENV PYTHONPATH=/app
+ENV PORT=8000
+ENV MOONSHINE_WEBRTC_ENABLED=true
+ENV MOONSHINE_LANGUAGE=en
+ENV MOONSHINE_UPDATE_INTERVAL_MS=500
+ENV RECORDINGS_DIR=/app/recordings
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/live')"
+
+ENTRYPOINT ["/app/entrypoint.sh"]

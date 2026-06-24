@@ -35,6 +35,8 @@ This file maps the documentation topology for rapid traversal.
 | [ADR-001](adrs/ADR-001-transport-protocol.md) | WebRTC for client transport | Accepted | LiveKit 2026, UGent thesis |
 | [ADR-002](adrs/ADR-002-asr-model-selection.md) | Distil-Whisper tiered strategy | Accepted | Gandhi et al. 2023 |
 | [ADR-003](adrs/ADR-003-memory-retrieval-strategy.md) | VoiceAgentRAG dual-agent | Accepted | Qiu et al. 2026 |
+| [ADR-023](adrs/ADR-023-self-hosted-asr-moonshine-v2.md) | Moonshine v2 for self-hosted ASR | Approved | King et al. 2026 |
+| [ADR-024](adrs/ADR-024-webrtc-transport-self-hosted-asr.md) | WebRTC for self-hosted ASR transport | Approved | aiortc / RFC 8829 |
 
 ---
 

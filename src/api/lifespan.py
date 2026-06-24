@@ -80,6 +80,33 @@ async def lifespan(app: FastAPI):
     app.state.config = config
     app.state.telephony = TwilioGateway()
 
+    # Self-hosted WebRTC ASR (ADR-024). Disabled by default to avoid loading
+    # ~270 MB of Moonshine weights in deployments that only need Twilio.
+    moonshine_enabled = os.getenv("MOONSHINE_WEBRTC_ENABLED", "false").lower() == "true"
+    if moonshine_enabled:
+        try:
+            from src.asr.moonshine_engine import MoonshineStreamingEngine
+
+            moonshine_language = os.getenv("MOONSHINE_LANGUAGE", "en")
+            moonshine_update_interval_ms = int(
+                os.getenv("MOONSHINE_UPDATE_INTERVAL_MS", "500")
+            )
+            app.state.moonshine_engine = await MoonshineStreamingEngine.create(
+                language=moonshine_language,
+                update_interval_ms=moonshine_update_interval_ms,
+            )
+            logger.info(
+                "moonshine_engine_initialized",
+                language=moonshine_language,
+                update_interval_ms=moonshine_update_interval_ms,
+            )
+        except Exception as exc:
+            logger.error("moonshine_engine_init_failed", error=str(exc))
+            app.state.moonshine_engine = None
+    else:
+        app.state.moonshine_engine = None
+        logger.info("moonshine_engine_disabled")
+
     # Domain plugin registry — ADR-009
     # OCP: auto-discover domains instead of hardcoding imports [^94]
     domain_registry = DomainRegistry()
@@ -203,3 +230,13 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     logger.info("voice_agent_shutting_down")
+
+    if getattr(app.state, "moonshine_engine", None) is not None:
+        try:
+            from src.api.webrtc_handler import close_all_sessions
+
+            await close_all_sessions()
+            await app.state.moonshine_engine.close()
+            logger.info("moonshine_engine_shutdown_complete")
+        except Exception as exc:
+            logger.error("moonshine_engine_shutdown_failed", error=str(exc))

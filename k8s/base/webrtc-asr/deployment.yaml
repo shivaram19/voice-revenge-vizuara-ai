@@ -1,0 +1,120 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: webrtc-asr
+  namespace: voice-agent
+  labels:
+    app: webrtc-asr
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: webrtc-asr
+  template:
+    metadata:
+      labels:
+        app: webrtc-asr
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: voice-agent-sa
+      nodeSelector:
+        workload: gpu-asr
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Equal
+          value: "true"
+          effect: NoSchedule
+      containers:
+        - name: webrtc-asr
+          image: voiceagent.azurecr.io/webrtc-asr:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: voice-agent-config
+          env:
+            - name: MOONSHINE_WEBRTC_ENABLED
+              value: "true"
+            - name: MOONSHINE_LANGUAGE
+              value: "en"
+            - name: MOONSHINE_UPDATE_INTERVAL_MS
+              value: "500"
+            - name: APPLICATIONINSIGHTS_CONNECTION_STRING
+              valueFrom:
+                secretKeyRef:
+                  name: voice-agent-secrets
+                  key: appinsights-connection-string
+            - name: TURN_SERVER_URL
+              valueFrom:
+                secretKeyRef:
+                  name: voice-agent-secrets
+                  key: turn-server-url
+                  optional: true
+            - name: TURN_SERVER_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: voice-agent-secrets
+                  key: turn-server-username
+                  optional: true
+            - name: TURN_SERVER_CREDENTIAL
+              valueFrom:
+                secretKeyRef:
+                  name: voice-agent-secrets
+                  key: turn-server-credential
+                  optional: true
+          resources:
+            requests:
+              cpu: "1000m"
+              memory: "4Gi"
+              nvidia.com/gpu: "1"
+            limits:
+              cpu: "4000m"
+              memory: "16Gi"
+              nvidia.com/gpu: "1"
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 999
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: shm
+              mountPath: /dev/shm
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 2Gi
+      securityContext:
+        fsGroup: 999

@@ -166,7 +166,7 @@ _BACKCHANNEL_TRIGGER_WORDS = 5
 # 2026-04-30): if the parent does not respond within this window, the
 # agent says the closing line and ends the call from our side rather
 # than waiting indefinitely.
-_AUTO_CLOSE_SILENCE_MS = _env_int("AUTO_CLOSE_SILENCE_MS", 3000)
+_AUTO_CLOSE_SILENCE_MS = _env_int("AUTO_CLOSE_SILENCE_MS", 8000)
 
 # Pace-match bounds for Bulbul (clip computed pace into a safe band).
 # Bulbul v3 accepts 0.5-2.0; we keep our adaptive range narrow so that
@@ -270,6 +270,13 @@ class ProductionPipeline:
         # if the parent says nothing for AUTO_CLOSE_SILENCE_MS, the
         # agent auto-dispatches the closing and ends the call.
         self._auto_close_tasks: Dict[str, asyncio.Task] = {}
+        # STT deduplication (DECISION-20260503-001): two-layer defense
+        # against Deepgram duplicate speech_final events.
+        # _stt_dedupe_last_ts[session_id] = timestamp (ms) of last processed speech_final
+        # _stt_dedupe_last_text[session_id] = normalized text of last processed speech_final
+        self._stt_dedupe_last_ts: Dict[str, float] = {}
+        self._stt_dedupe_last_text: Dict[str, str] = {}
+        self._stt_duplicate_count: Dict[str, int] = {}
         # Per-call pace adaptation (Communication Accommodation Theory
         # Giles 1991, applied to TTS speed). Track caller words/sec
         # across utterances; derive a session-level pace used as a
@@ -457,6 +464,10 @@ class ProductionPipeline:
         self._session_pace.pop(session_id, None)
         # Cancel any pending auto-close task.
         self._cancel_auto_close(session_id)
+        # Clean up deduplication state.
+        self._stt_dedupe_last_ts.pop(session_id, None)
+        self._stt_dedupe_last_text.pop(session_id, None)
+        self._stt_duplicate_count.pop(session_id, None)
 
         # Cancel any in-flight TTS
         task = self._tts_tasks.pop(session_id, None)
@@ -571,8 +582,30 @@ class ProductionPipeline:
 
         # Trigger processing on speech_final or utterance_end
         if event.speech_final:
+            # DECISION-20260503-001: STT deduplication — two-layer defense
+            # against Deepgram duplicate speech_final events.
             buffer = self._final_buffers.get(session_id, "").strip()
             if buffer and len(buffer) >= 2:
+                # Layer 1: normalized text + 200ms dedupe window
+                norm = re.sub(r"[^\w\s]", "", buffer.lower()).strip()
+                last_ts = self._stt_dedupe_last_ts.get(session_id, 0.0)
+                last_text = self._stt_dedupe_last_text.get(session_id, "")
+                if norm and norm == last_text and (now_ms - last_ts) < 200:
+                    dup_count = self._stt_duplicate_count.get(session_id, 0) + 1
+                    self._stt_duplicate_count[session_id] = dup_count
+                    logger.info(
+                        "stt_duplicate_suppressed",
+                        session_id=session_id,
+                        duplicate_count=dup_count,
+                        text=buffer[:60],
+                        elapsed_ms=round(now_ms - last_ts, 1),
+                    )
+                    self._final_buffers[session_id] = ""
+                    return
+                # Record this speech_final for future dedupe checks
+                self._stt_dedupe_last_ts[session_id] = now_ms
+                self._stt_dedupe_last_text[session_id] = norm
+
                 self._final_buffers[session_id] = ""
                 # Drop the buffer if greeting is still in flight — prevents
                 # the agent from "responding" to a confused "Hello?" the
@@ -1280,8 +1313,17 @@ class ProductionPipeline:
 
     async def _auto_close_after_silence(self, session_id: str) -> None:
         """Wait the silence window, then deliver the cached closing."""
+        # DECISION-20260503-002: per-scenario override. Look up the active
+        # scenario's auto_close_ms; fall back to the global default.
+        scenario_close_ms = _AUTO_CLOSE_SILENCE_MS
+        receptionist = self._session_receptionist.get(session_id)
+        if receptionist is not None:
+            scenario = getattr(receptionist, "_scenarios", {}).get(session_id) if hasattr(receptionist, "_scenarios") else None
+            if scenario is not None:
+                scenario_close_ms = getattr(scenario, "auto_close_ms", _AUTO_CLOSE_SILENCE_MS)
+
         try:
-            await asyncio.sleep(_AUTO_CLOSE_SILENCE_MS / 1000.0)
+            await asyncio.sleep(scenario_close_ms / 1000.0)
         except asyncio.CancelledError:
             return
 
@@ -1307,7 +1349,8 @@ class ProductionPipeline:
         logger.info(
             "auto_close_silence_triggered",
             session_id=session_id,
-            silence_ms=_AUTO_CLOSE_SILENCE_MS,
+            silence_ms=scenario_close_ms,
+            global_default=_AUTO_CLOSE_SILENCE_MS,
         )
         self._stage[session_id] = _STAGE_DONE
         self._dispatch_cached(session_id, closing_audio, closing_text)

@@ -13,6 +13,7 @@ dependencies = [
     # ASR (ADR-002)
     "faster-whisper>=1.0.0",
     "transformers>=4.40.0",
+    "moonshine-voice>=0.0.60",
     
     # TTS (ADR-004)
     "piper-tts>=1.2.0",

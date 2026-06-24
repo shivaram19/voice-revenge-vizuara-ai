@@ -177,10 +177,13 @@ def main() -> int:
     </Say>
 </Response>"""
     else:
-        # Use the /twilio/inbound endpoint so Twilio POSTs to us with the
-        # real CallSid.  Inline TwiML with <Stream> works for inbound but
-        # outbound calls should use a TwiML URL for correct CallSid binding.
-        twiml = None
+        # Inline TwiML with CAtest placeholder.  The WebSocket handler
+        # reads the real CallSid from the Media Streams start event, so
+        # the URL path segment is harmless.  This is more reliable than
+        # the url= callback pattern which Twilio sometimes skips.
+        twiml = build_twiml(
+            websocket_url, base_url, call_sid="CAtest", parent_phone=args.to
+        )
 
     print("=" * 60)
     print("OUTBOUND DEMO CALL")

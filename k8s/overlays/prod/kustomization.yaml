@@ -13,6 +13,8 @@ resources:
   - ../../base/stt-service/service.yaml
   - ../../base/tts-service/deployment.yaml
   - ../../base/tts-service/service.yaml
+  - ../../base/webrtc-asr/deployment.yaml
+  - ../../base/webrtc-asr/service.yaml
   - ../../base/ingress/nginx-ingress.yaml
   - ../../base/monitoring/servicemonitor.yaml
 
@@ -25,6 +27,8 @@ replicas:
     count: 4
   - name: tts-service
     count: 5
+  - name: webrtc-asr
+    count: 2
 
 images:
   - name: voiceagent.azurecr.io/agent-controller
@@ -32,6 +36,8 @@ images:
   - name: voiceagent.azurecr.io/stt-service
     newTag: prod
   - name: voiceagent.azurecr.io/tts-service
+    newTag: prod
+  - name: voiceagent.azurecr.io/webrtc-asr
     newTag: prod
 
 patches:
