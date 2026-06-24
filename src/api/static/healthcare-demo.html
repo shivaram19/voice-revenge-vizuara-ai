@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Healthcare Patient Follow-Up MVP</title>
+  <style>
+    :root { --bg: #0f172a; --panel: #1e293b; --text: #e2e8f0; --accent: #38bdf8; --ok: #22c55e; --warn: #f59e0b; --agent: #a78bfa; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); line-height: 1.5; }
+    .container { max-width: 960px; margin: 0 auto; padding: 2rem; }
+    h1 { margin-bottom: 0.25rem; }
+    .subtitle { color: #94a3b8; margin-bottom: 1.5rem; }
+    .panel { background: var(--panel); border-radius: 0.75rem; padding: 1.25rem; margin-bottom: 1rem; }
+    .row { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; margin-bottom: 1rem; }
+    label { font-size: 0.875rem; color: #94a3b8; }
+    input[type="text"] { background: #0f172a; border: 1px solid #334155; color: var(--text); padding: 0.5rem 0.75rem; border-radius: 0.5rem; min-width: 220px; }
+    button { background: var(--accent); color: #0f172a; border: none; padding: 0.6rem 1.2rem; border-radius: 0.5rem; font-weight: 600; cursor: pointer; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    button.danger { background: #ef4444; color: white; }
+    button.secondary { background: #334155; color: var(--text); }
+    .status { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 0.875rem; }
+    .status.connected { color: var(--ok); }
+    .status.error { color: #ef4444; }
+    .transcript { min-height: 240px; max-height: 60vh; overflow-y: auto; background: #0f172a; border: 1px solid #334155; border-radius: 0.5rem; padding: 1rem; }
+    .line { margin-bottom: 0.75rem; padding: 0.5rem; border-radius: 0.375rem; }
+    .line.user { background: rgba(56, 189, 248, 0.08); border-left: 3px solid var(--accent); }
+    .line.agent { background: rgba(167, 139, 250, 0.08); border-left: 3px solid var(--agent); }
+    .line.partial { opacity: 0.7; }
+    .meta { font-size: 0.75rem; color: #64748b; margin-top: 0.25rem; }
+    .badge { display: inline-block; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.05em; padding: 0.125rem 0.375rem; border-radius: 999px; margin-left: 0.5rem; }
+    .badge.user { background: rgba(34, 197, 94, 0.2); color: var(--ok); }
+    .badge.agent { background: rgba(167, 139, 250, 0.2); color: var(--agent); }
+    .help { color: #94a3b8; font-size: 0.875rem; }
+    code { background: #0f172a; padding: 0.125rem 0.375rem; border-radius: 0.25rem; }
+    .seed-phones { font-size: 0.875rem; color: #94a3b8; }
+    .seed-phones code { margin-right: 0.5rem; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🏥 Healthcare Patient Follow-Up MVP</h1>
+    <p class="subtitle">Voice agent demo for post-hospital-visit well-being and medicine adherence checks.</p>
+
+    <div class="panel">
+      <div class="row">
+        <div>
+          <label for="serverUrl">Server URL</label><br />
+          <input type="text" id="serverUrl" placeholder="https://your-server.com" />
+        </div>
+        <div>
+          <label for="sessionId">Session ID</label><br />
+          <input type="text" id="sessionId" placeholder="auto-generated" />
+        </div>
+        <div>
+          <label for="phone">Patient Phone</label><br />
+          <input type="text" id="phone" value="+919876543210" />
+        </div>
+      </div>
+      <p class="seed-phones">
+        Seeded patients:
+        <code>+919876543210</code> (Ramesh Rao, te-en)
+        <code>+919876543211</code> (Lakshmi Devi, te)
+        <code>+919876543212</code> (Kiran Kumar, en)
+      </p>
+      <div class="row">
+        <button id="btnStart">Start Microphone & Connect</button>
+        <button id="btnStop" class="danger" disabled>Stop</button>
+        <button id="btnTts" class="secondary">TTS: ON</button>
+        <span id="status" class="status">Idle</span>
+      </div>
+      <p class="help">
+        Requires HTTPS (or localhost) and microphone permission.
+        The agent response is spoken locally if your browser supports Web Speech API.
+      </p>
+    </div>
+
+    <div class="panel">
+      <h3>Conversation</h3>
+      <div id="transcript" class="transcript"></div>
+    </div>
+
+    <div class="panel">
+      <h3>Metrics</h3>
+      <div class="row">
+        <span>Partial events: <strong id="metricPartial">0</strong></span>
+        <span>Final events: <strong id="metricFinal">0</strong></span>
+        <span>Agent responses: <strong id="metricAgent">0</strong></span>
+        <span>DataChannel state: <strong id="metricDc">-</strong></span>
+        <span>ICE state: <strong id="metricIce">-</strong></span>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const serverUrlInput = $('serverUrl');
+    const sessionIdInput = $('sessionId');
+    const phoneInput = $('phone');
+    const btnStart = $('btnStart');
+    const btnStop = $('btnStop');
+    const btnTts = $('btnTts');
+    const statusEl = $('status');
+    const transcriptEl = $('transcript');
+    const metricPartial = $('metricPartial');
+    const metricFinal = $('metricFinal');
+    const metricAgent = $('metricAgent');
+    const metricDc = $('metricDc');
+    const metricIce = $('metricIce');
+
+    serverUrlInput.value = window.location.origin;
+    if (!sessionIdInput.value) {
+      sessionIdInput.value = 'hc-' + Math.random().toString(36).slice(2, 10);
+    }
+
+    let pc = null;
+    let dc = null;
+    let localStream = null;
+    let partialCount = 0;
+    let finalCount = 0;
+    let agentCount = 0;
+    let ttsEnabled = true;
+
+    function setStatus(text, cls) {
+      statusEl.textContent = text;
+      statusEl.className = 'status ' + (cls || '');
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    function appendLine(text, type, meta = {}) {
+      const isUser = type === 'user' || type === 'transcript_final' || type === 'transcript_partial';
+      const isAgent = type === 'agent_response';
+      const isPartial = type === 'transcript_partial';
+      const cls = isUser ? 'user' : (isAgent ? 'agent' : 'user');
+      const badge = isUser ? 'You' : 'Dr. Priya';
+
+      if (isPartial) {
+        // Update or create partial line.
+        let existing = document.querySelector('[data-partial="true"]');
+        if (!existing) {
+          existing = document.createElement('div');
+          existing.className = 'line user partial';
+          existing.dataset.partial = 'true';
+          transcriptEl.appendChild(existing);
+        }
+        existing.innerHTML = `<span class="text">${escapeHtml(text)}</span><span class="badge user">${badge}</span><div class="meta">partial</div>`;
+        transcriptEl.scrollTop = transcriptEl.scrollHeight;
+        return;
+      }
+
+      // Remove any partial line when a final/user/agent line arrives.
+      document.querySelectorAll('[data-partial="true"]').forEach(el => el.remove());
+
+      const div = document.createElement('div');
+      div.className = 'line ' + cls;
+      div.innerHTML = `<span class="text">${escapeHtml(text)}</span><span class="badge ${cls}">${badge}</span>${meta.latency_ms !== undefined ? `<div class="meta">latency ${Math.round(meta.latency_ms)} ms · duration ${meta.duration_sec?.toFixed(2)} s</div>` : ''}`;
+      transcriptEl.appendChild(div);
+      transcriptEl.scrollTop = transcriptEl.scrollHeight;
+    }
+
+    function speak(text) {
+      if (!ttsEnabled || !window.speechSynthesis) return;
+      try {
+        const u = new SpeechSynthesisUtterance(text);
+        u.lang = 'en-IN';
+        u.rate = 0.95;
+        window.speechSynthesis.speak(u);
+      } catch (e) {
+        console.warn('TTS failed', e);
+      }
+    }
+
+    async function getIceServers(baseUrl) {
+      try {
+        const res = await fetch(`${baseUrl}/webrtc/ice-servers`);
+        if (res.ok) return await res.json();
+      } catch (e) {
+        console.warn('Failed to fetch ICE servers', e);
+      }
+      return { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+    }
+
+    async function start() {
+      const baseUrl = serverUrlInput.value.replace(/\/$/, '');
+      const sessionId = sessionIdInput.value;
+      const phone = phoneInput.value.trim();
+      if (!baseUrl || !sessionId || !phone) {
+        setStatus('Server URL, Session ID, and Phone are required', 'error');
+        return;
+      }
+
+      btnStart.disabled = true;
+      setStatus('Requesting microphone...');
+
+      try {
+        localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch (err) {
+        setStatus('Microphone denied: ' + err.message, 'error');
+        btnStart.disabled = false;
+        return;
+      }
+
+      setStatus('Creating peer connection...');
+      const iceConfig = await getIceServers(baseUrl);
+      pc = new RTCPeerConnection(iceConfig);
+      pc.oniceconnectionstatechange = () => {
+        metricIce.textContent = pc.iceConnectionState;
+      };
+      pc.onconnectionstatechange = () => {
+        setStatus(pc.connectionState, pc.connectionState === 'connected' ? 'connected' : '');
+      };
+
+      dc = pc.createDataChannel('transcripts', { ordered: true });
+      dc.onopen = () => { metricDc.textContent = 'open'; };
+      dc.onclose = () => { metricDc.textContent = 'closed'; };
+      dc.onmessage = (evt) => {
+        try {
+          const msg = JSON.parse(evt.data);
+          if (msg.type === 'transcript_partial') {
+            partialCount++;
+            metricPartial.textContent = partialCount;
+            appendLine(msg.text, 'transcript_partial', msg);
+          } else if (msg.type === 'transcript_final') {
+            finalCount++;
+            metricFinal.textContent = finalCount;
+            appendLine(msg.text, 'user', msg);
+          } else if (msg.type === 'agent_response') {
+            agentCount++;
+            metricAgent.textContent = agentCount;
+            appendLine(msg.text, 'agent_response');
+            speak(msg.text);
+          }
+        } catch (e) {
+          console.error('Invalid DC message', evt.data, e);
+        }
+      };
+
+      localStream.getAudioTracks().forEach(track => pc.addTrack(track, localStream));
+
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+
+      setStatus('Sending SDP offer...');
+      const response = await fetch(`${baseUrl}/webrtc/offer?session_id=${encodeURIComponent(sessionId)}&phone=${encodeURIComponent(phone)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sdp: pc.localDescription.sdp, type: pc.localDescription.type })
+      });
+
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`Server returned ${response.status}: ${text}`);
+      }
+
+      const answer = await response.json();
+      await pc.setRemoteDescription(answer);
+      setStatus('Connected — speak now', 'connected');
+      btnStop.disabled = false;
+    }
+
+    async function stop() {
+      btnStop.disabled = true;
+      if (dc) { try { dc.close(); } catch (e) {} }
+      if (pc) { try { pc.close(); } catch (e) {} }
+      if (localStream) { localStream.getTracks().forEach(t => t.stop()); }
+      pc = null; dc = null; localStream = null;
+      setStatus('Idle');
+      metricDc.textContent = '-';
+      metricIce.textContent = '-';
+      btnStart.disabled = false;
+    }
+
+    btnStart.addEventListener('click', () => start().catch(err => {
+      setStatus(err.message, 'error');
+      btnStart.disabled = false;
+      btnStop.disabled = true;
+    }));
+    btnStop.addEventListener('click', stop);
+    btnTts.addEventListener('click', () => {
+      ttsEnabled = !ttsEnabled;
+      btnTts.textContent = ttsEnabled ? 'TTS: ON' : 'TTS: OFF';
+    });
+  </script>
+</body>
+</html>
